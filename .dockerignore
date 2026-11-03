@@ -1,0 +1,12 @@
+node_modules
+web/node_modules
+dist
+data
+.env
+.git
+.scratch
+*.sqlite
+*.md
+tests
+src/**/*.test.ts
+src/test-helpers.ts

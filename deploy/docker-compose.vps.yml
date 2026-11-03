@@ -1,0 +1,32 @@
+# VPS compose file. Lives at /docker/snd/docker-compose.yml, the source code in
+# /docker/snd/src (rsync), next to a .env with SND_PASSWORD and SND_SECRET.
+# Traefik (/docker/traefik, network_mode: host) terminates TLS and routes via labels.
+#
+# Update: rsync source to /docker/snd/src, then docker compose up -d --build
+name: snd
+
+services:
+  snd:
+    build: ./src
+    image: snd:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SND_DATA_DIR: /data
+      SND_HOST: 0.0.0.0
+      SND_PORT: "3000"
+      SND_TRUST_PROXY: "1"
+      SND_PUBLIC_URL: https://snd.mchlr.de
+    volumes:
+      - snd-data:/data
+    # No published port: Traefik reaches the container on its bridge IP.
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.snd.rule: Host(`snd.mchlr.de`)
+      traefik.http.routers.snd.entrypoints: websecure
+      traefik.http.routers.snd.tls: "true"
+      traefik.http.routers.snd.tls.certresolver: letsencrypt
+      traefik.http.services.snd.loadbalancer.server.port: "3000"
+
+volumes:
+  snd-data:

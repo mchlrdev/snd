@@ -1,0 +1,37 @@
+services:
+  snd:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SND_DATA_DIR: /data
+      SND_HOST: 0.0.0.0
+      SND_PORT: "3000"
+      SND_TRUST_PROXY: "1"
+      # Ohne diese URL entstehen Snippets mit http:// und das Cookie ist nicht Secure.
+      SND_PUBLIC_URL: ${SND_PUBLIC_URL:-https://${SND_DOMAIN:-localhost}}
+    volumes:
+      - snd_data:/data
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SND_DOMAIN: ${SND_DOMAIN:-localhost}
+      CADDY_EMAIL: ${CADDY_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - snd
+
+volumes:
+  snd_data:
+  caddy_data:
+  caddy_config:

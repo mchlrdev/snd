@@ -1,0 +1,3 @@
+{$SND_DOMAIN:localhost} {
+	reverse_proxy snd:3000
+}
