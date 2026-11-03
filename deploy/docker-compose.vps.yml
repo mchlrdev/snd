@@ -10,8 +10,9 @@ services:
   snd:
     image: ghcr.io/mchlrdev/snd:${SND_TAG:-latest}
     restart: unless-stopped
-    env_file: .env
     environment:
+      SND_PASSWORD: ${SND_PASSWORD:?Set SND_PASSWORD in .env}
+      SND_SECRET: ${SND_SECRET:?Set SND_SECRET in .env}
       SND_DATA_DIR: /data
       SND_HOST: 0.0.0.0
       SND_PORT: "3000"
