@@ -20,6 +20,7 @@ export function testConfig(over: Partial<Config> = {}): Config {
     secret: "test-secret-16ch",
     publicUrl: "https://snd.test",
     trustProxy: true,
+    timeZone: "Europe/Berlin",
     ...over,
   };
 }
@@ -63,7 +64,7 @@ export function makeApp(options?: {
   const now = () => clock.value;
   const operator = createOperator({ store, box, mailer: mail.mailer, config, now });
   operator.ensureMcpToken(config.mcpTokenSeed);
-  const queue = new MailQueue(store, mail.mailer, box, now);
+  const queue = new MailQueue(store, mail.mailer, box, now, config.timeZone);
   const env: AppEnv = {
     store,
     config,

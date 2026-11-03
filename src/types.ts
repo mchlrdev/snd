@@ -79,6 +79,8 @@ export type FormRecord = {
   smtp: SmtpRecord | null;
   turnstileSecretEnc: string | null;
   notifyPolicy: NotifyPolicy | null;
+  /** Eigene Titel pro Feldname für Mail und Konsole, z. B. { message: "Nachricht" }. */
+  fieldLabels: Record<string, string>;
   createdAt: number;
 };
 
@@ -91,6 +93,9 @@ export type FormView = {
   smtp: SmtpView | null;
   turnstileSet: boolean;
   notifyPolicy: NotifyPolicy | null;
+  fieldLabels: Record<string, string>;
+  /** Feldnamen, die in Nachrichten dieses Forms schon vorkamen. */
+  seenFields: string[];
   snippet: string;
   submitUrl: string;
   submissionCount: number;
@@ -149,6 +154,7 @@ export type DeliveryFilter = "delivered" | "pending" | "failed";
 
 export type MailJob = SubmissionRecord & {
   formName: string;
+  fieldLabels: Record<string, string>;
   projectLabel: string;
   recipients: string[];
   formSmtp: SmtpRecord | null;

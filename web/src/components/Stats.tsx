@@ -392,8 +392,10 @@ export function FieldBreakdown({
   stats,
   selected,
   onSelect,
+  labels,
 }: {
   stats: Stats;
+  labels?: Record<string, string>;
   selected?: { field: string; value: string };
   onSelect: (field: string, value: string) => void;
 }) {
@@ -406,7 +408,7 @@ export function FieldBreakdown({
         return (
           <section key={field.name} className="group-surface p-4">
             <h3 className={cn(typeClass("body", "compact"), "mb-3 text-foreground")} style={{ fontVariationSettings: fontWeights.semibold }}>
-              {fieldLabel(field.name)}
+              {fieldLabel(field.name, labels)}
             </h3>
             <ul className="flex flex-col gap-1">
               {field.values!.map((entry) => {
@@ -465,7 +467,9 @@ const FIELD_LABELS: Record<string, string> = {
 
 /** Field names come from the website's HTML ("message", "tel_mobil"); show
  *  them the way a person would say them. */
-export function fieldLabel(name: string): string {
+export function fieldLabel(name: string, labels?: Record<string, string>): string {
+  const own = labels?.[name]?.trim();
+  if (own) return own;
   const known = FIELD_LABELS[name.toLowerCase()];
   if (known) return known;
   const spaced = name.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();

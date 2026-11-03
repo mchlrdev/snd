@@ -8,11 +8,13 @@ import {
   FileText,
   Loader2,
   Mail,
+  Plus,
   RotateCcw,
   Settings2,
   ShieldCheck,
   Trash2,
   TriangleAlert,
+  Type,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Banner, BannerDescription, BannerTitle } from "@/components/ui/banner";
@@ -153,7 +155,7 @@ function Analytics({ form, onChanged }: { form: Form; onChanged: () => Promise<v
           <RangeTabs days={range.days} onChange={range.setDays} />
           <StatusSelect value={status} onChange={setStatus} />
           {fieldFilter ? (
-            <FilterChip label={`${fieldLabel(fieldFilter.field)}: ${fieldFilter.value}`} onClear={() => setFieldFilter(undefined)} />
+            <FilterChip label={`${fieldLabel(fieldFilter.field, form.fieldLabels)}: ${fieldFilter.value}`} onClear={() => setFieldFilter(undefined)} />
           ) : null}
           <span className="flex-1" />
           <Button
@@ -176,6 +178,7 @@ function Analytics({ form, onChanged }: { form: Form; onChanged: () => Promise<v
             <ColumnChart stats={data} title="Nachrichten" loading={loading} />
             <FieldBreakdown
               stats={data}
+              labels={form.fieldLabels}
               selected={fieldFilter}
               onSelect={(field, value) =>
                 setFieldFilter((current) => (current?.field === field && current.value === value ? undefined : { field, value }))
@@ -415,6 +418,8 @@ function FormSettings({ form, project, onSaved }: { form: Form; project: Project
         </div>
       </Section>
 
+      <FieldTitles form={form} onSaved={onSaved} />
+
       <Section
         icon={<Mail />}
         title="Verschickt über"
@@ -570,5 +575,89 @@ function FormSettings({ form, project, onSaved }: { form: Form; project: Project
         }}
       />
     </div>
+  );
+}
+
+/** Titles shown instead of the HTML field names in the notification mail and
+ *  in the analysis. Fields come from past messages; for a form without any,
+ *  names can be added by hand. */
+function FieldTitles({ form, onSaved }: { form: Form; onSaved: (next: Form) => Promise<void> }) {
+  const [labels, setLabels] = useState<Record<string, string>>(form.fieldLabels);
+  const [extra, setExtra] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const save = useSave();
+
+  useEffect(() => {
+    setLabels(form.fieldLabels);
+    setExtra([]);
+  }, [form.fieldLabels]);
+
+  const names = useMemo(
+    () => [...new Set([...form.seenFields, ...Object.keys(form.fieldLabels), ...extra])],
+    [form.seenFields, form.fieldLabels, extra],
+  );
+  const cleaned = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(labels)) if (value.trim()) out[key] = value.trim();
+    return out;
+  }, [labels]);
+  const dirty = JSON.stringify(cleaned) !== JSON.stringify(form.fieldLabels);
+
+  function addField() {
+    const name = draft.trim();
+    if (!name) return;
+    if (!names.includes(name)) setExtra((current) => [...current, name]);
+    setDraft("");
+  }
+
+  return (
+    <Section
+      icon={<Type />}
+      title="Feldtitel"
+      description="So heißen die Felder in der E-Mail und in der Auswertung. Leer lassen für den Vorschlag."
+      footer={<SaveFooter state={save.state} dirty={dirty} onSave={() => void save.run(async () => onSaved(await api.updateForm(form.id, { fieldLabels: cleaned })))} />}
+    >
+      {names.length ? (
+        <InputGroup className="w-full max-w-none">
+          {names.map((name, index) => (
+            <InputField
+              key={name}
+              index={index}
+              label={name}
+              value={labels[name] ?? ""}
+              onChange={(value) => setLabels((current) => ({ ...current, [name]: value }))}
+              placeholder={fieldLabel(name)}
+              autoComplete="off"
+            />
+          ))}
+        </InputGroup>
+      ) : (
+        <p className={cn(typeClass("body", "compact"), "text-muted-foreground")}>
+          Sobald die erste Nachricht da ist, erscheinen hier ihre Felder. Du kannst sie auch selbst eintragen.
+        </p>
+      )}
+      <div className="flex items-end gap-2">
+        <InputGroup className="w-full max-w-none flex-1">
+          <InputField
+            index={0}
+            label="Feldname aus dem HTML"
+            value={draft}
+            onChange={setDraft}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addField();
+              }
+            }}
+            placeholder="z. B. telefon"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </InputGroup>
+        <Button type="button" variant="secondary" leadingIcon={Plus} onClick={addField} disabled={!draft.trim()}>
+          Hinzufügen
+        </Button>
+      </div>
+    </Section>
   );
 }

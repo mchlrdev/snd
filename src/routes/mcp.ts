@@ -33,6 +33,10 @@ const smtpPatch = z.object({
 
 const notifyPolicy = z.enum(["immediate", "abandoned", "off"]);
 
+const fieldLabels = z
+  .record(z.string(), z.string())
+  .describe('Eigene Titel pro Feldname für die Benachrichtigungs-Mail, z. B. { "message": "Nachricht" }. Ersetzt alle bisherigen; null löscht sie.');
+
 const submissionFilter = {
   formId: z.string().optional().describe("Nur dieses Formular."),
   projectId: z.string().optional().describe("Nur diese Website (Project)."),
@@ -196,6 +200,7 @@ export function mountMcp(
           smtp: smtpInput.optional(),
           turnstileSecret: z.string().optional(),
           notifyPolicy: notifyPolicy.nullable().optional(),
+          fieldLabels: fieldLabels.nullable().optional(),
         }),
       },
       async ({ projectId, ...input }) => run(() => env.operator.createForm(projectId, input, requestUrl)),
@@ -211,6 +216,7 @@ export function mountMcp(
           smtp: z.union([smtpPatch, z.null()]).optional(),
           turnstileSecret: z.string().nullable().optional(),
           notifyPolicy: notifyPolicy.nullable().optional(),
+          fieldLabels: fieldLabels.nullable().optional(),
         }),
       },
       async ({ id, ...patch }) => run(() => env.operator.updateForm(id, patch, requestUrl)),

@@ -63,6 +63,28 @@ function validateRecipients(recipients: string[]): string[] {
   return out;
 }
 
+const MAX_LABELS = 50;
+const MAX_LABEL_LENGTH = 200;
+
+/** Leere Titel fallen weg; Feldnamen und Titel werden getrimmt. */
+function validateFieldLabels(input: unknown): Record<string, string> {
+  if (input == null) return {};
+  if (typeof input !== "object" || Array.isArray(input)) throw new AppError(400, "Feldtitel müssen ein Objekt sein.");
+  const out: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(input)) {
+    if (typeof rawValue !== "string") throw new AppError(400, `Feldtitel für ${rawKey} muss Text sein.`);
+    const key = rawKey.trim();
+    const value = rawValue.trim();
+    if (!key || !value) continue;
+    if (key.length > MAX_LABEL_LENGTH || value.length > MAX_LABEL_LENGTH) {
+      throw new AppError(400, `Feldtitel dürfen höchstens ${MAX_LABEL_LENGTH} Zeichen haben.`);
+    }
+    out[key] = value;
+  }
+  if (Object.keys(out).length > MAX_LABELS) throw new AppError(400, `Höchstens ${MAX_LABELS} Feldtitel.`);
+  return out;
+}
+
 function asNotify(value: string | null | undefined): NotifyPolicy | null {
   if (value == null) return null;
   if (value === "immediate" || value === "abandoned" || value === "off") return value;
@@ -113,6 +135,8 @@ export function createOperator(opts: {
       smtp: smtpView(form.smtp),
       turnstileSet: Boolean(form.turnstileSecretEnc),
       notifyPolicy: form.notifyPolicy,
+      fieldLabels: form.fieldLabels,
+      seenFields: store.seenFields(form.id),
       snippet: formSnippet(`${base}/submit`, form.accessKey),
       submitUrl: `${base}/submit`,
       submissionCount: store.countSubmissions({ formId: form.id }),
@@ -316,6 +340,7 @@ export function createOperator(opts: {
         smtp?: SmtpInput | null;
         turnstileSecret?: string | null;
         notifyPolicy?: NotifyPolicy | null;
+        fieldLabels?: Record<string, string> | null;
       },
       requestUrl?: string,
     ): FormView {
@@ -334,6 +359,7 @@ export function createOperator(opts: {
           smtp,
           turnstileSecretEnc,
           notifyPolicy: asNotify(input.notifyPolicy),
+          fieldLabels: validateFieldLabels(input.fieldLabels),
           now: now(),
         }),
         requestUrl,
@@ -348,6 +374,8 @@ export function createOperator(opts: {
         smtp?: SmtpPatch | null;
         turnstileSecret?: string | null;
         notifyPolicy?: NotifyPolicy | null;
+        /** Ersetzt alle Feldtitel; null löscht sie. */
+        fieldLabels?: Record<string, string> | null;
       },
       requestUrl?: string,
     ): FormView {
@@ -364,6 +392,7 @@ export function createOperator(opts: {
         smtp,
         turnstileSecretEnc,
         notifyPolicy: patch.notifyPolicy === undefined ? current.notifyPolicy : asNotify(patch.notifyPolicy),
+        fieldLabels: patch.fieldLabels === undefined ? current.fieldLabels : validateFieldLabels(patch.fieldLabels),
       });
       return formView(updated!, requestUrl);
     },

@@ -64,6 +64,10 @@ export type Form = {
   smtp: SmtpView | null;
   turnstileSet: boolean;
   notifyPolicy: NotifyPolicy | null;
+  /** Eigene Titel pro Feldname, z. B. { message: "Nachricht" }. */
+  fieldLabels: Record<string, string>;
+  /** Feldnamen, die in Nachrichten schon vorkamen. */
+  seenFields: string[];
   snippet: string;
   submitUrl: string;
   submissionCount: number;
@@ -166,6 +170,7 @@ export const api = {
       smtp?: SmtpInput | null;
       turnstileSecret?: string | null;
       notifyPolicy?: NotifyPolicy | null;
+      fieldLabels?: Record<string, string> | null;
     },
   ) =>
     request<Form>(`/api/forms/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

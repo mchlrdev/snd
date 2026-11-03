@@ -159,8 +159,24 @@ function formFrom(row: Row): FormRecord {
     smtp: smtpFrom(row, "smtp_"),
     turnstileSecretEnc: row.turnstile_secret_enc ? String(row.turnstile_secret_enc) : null,
     notifyPolicy: row.notify_policy ? asNotify(row.notify_policy) : null,
+    fieldLabels: parseLabels(row.field_labels),
     createdAt: Number(row.created_at),
   };
+}
+
+function parseLabels(raw: unknown): Record<string, string> {
+  if (typeof raw !== "string" || !raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const labels: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string") labels[key] = value;
+    }
+    return labels;
+  } catch {
+    return {};
+  }
 }
 
 function submissionFrom(row: Row): SubmissionRecord {
@@ -249,6 +265,10 @@ export class Store {
     const projectCols = this.db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
     if (!projectCols.some((col) => col.name === "notify_policy")) {
       this.db.exec("ALTER TABLE projects ADD COLUMN notify_policy TEXT");
+    }
+    const formCols = this.db.prepare("PRAGMA table_info(forms)").all() as { name: string }[];
+    if (!formCols.some((col) => col.name === "field_labels")) {
+      this.db.exec("ALTER TABLE forms ADD COLUMN field_labels TEXT");
     }
   }
 
@@ -413,6 +433,7 @@ export class Store {
     smtp: SmtpRecord | null;
     turnstileSecretEnc: string | null;
     notifyPolicy: NotifyPolicy | null;
+    fieldLabels: Record<string, string>;
     now: number;
   }): FormRecord {
     const id = newId();
@@ -422,11 +443,11 @@ export class Store {
         `INSERT INTO forms (
           id, project_id, name, access_key, recipients,
           smtp_host, smtp_port, smtp_user, smtp_pass_enc, smtp_from,
-          turnstile_secret_enc, notify_policy, created_at
+          turnstile_secret_enc, notify_policy, field_labels, created_at
         ) VALUES (
           @id, @project_id, @name, @access_key, @recipients,
           @smtp_host, @smtp_port, @smtp_user, @smtp_pass_enc, @smtp_from,
-          @turnstile_secret_enc, @notify_policy, @created_at
+          @turnstile_secret_enc, @notify_policy, @field_labels, @created_at
         )`,
       )
       .run({
@@ -438,6 +459,7 @@ export class Store {
         ...smtp,
         turnstile_secret_enc: input.turnstileSecretEnc,
         notify_policy: input.notifyPolicy,
+        field_labels: JSON.stringify(input.fieldLabels),
         created_at: input.now,
       });
     return this.getForm(id)!;
@@ -452,6 +474,7 @@ export class Store {
       smtp?: SmtpRecord | null;
       turnstileSecretEnc?: string | null;
       notifyPolicy?: NotifyPolicy | null;
+      fieldLabels?: Record<string, string>;
     },
   ): FormRecord | null {
     const current = this.getForm(id);
@@ -472,7 +495,8 @@ export class Store {
           smtp_pass_enc = @smtp_pass_enc,
           smtp_from = @smtp_from,
           turnstile_secret_enc = @turnstile_secret_enc,
-          notify_policy = @notify_policy
+          notify_policy = @notify_policy,
+          field_labels = @field_labels
         WHERE id = @id`,
       )
       .run({
@@ -483,6 +507,7 @@ export class Store {
         ...smtp,
         turnstile_secret_enc: turnstile,
         notify_policy: notifyPolicy,
+        field_labels: JSON.stringify(patch.fieldLabels ?? current.fieldLabels),
       });
     return this.getForm(id);
   }
@@ -620,6 +645,22 @@ export class Store {
       .run(projectId, origin, icon?.contentType ?? null, icon?.data ?? null, now);
   }
 
+  /** Feldnamen der letzten Nachrichten eines Forms, in der Reihenfolge der neuesten. */
+  seenFields(formId: string, limit = 200): string[] {
+    const rows = this.db
+      .prepare("SELECT fields_json FROM submissions WHERE form_id = ? ORDER BY created_at DESC LIMIT ?")
+      .all(formId, limit) as { fields_json: string }[];
+    const names = new Set<string>();
+    for (const row of rows) {
+      try {
+        for (const key of Object.keys(JSON.parse(row.fields_json) as Record<string, unknown>)) names.add(key);
+      } catch {
+        // Kaputte Zeile überspringen.
+      }
+    }
+    return [...names];
+  }
+
   countSubmissions(filter: { formId?: string; projectId?: string }): number {
     if (filter.formId) {
       return (
@@ -667,6 +708,7 @@ export class Store {
             f.name AS form_name,
             f.recipients AS form_recipients,
             f.notify_policy AS form_notify_policy,
+            f.field_labels AS form_field_labels,
             f.smtp_host AS form_smtp_host,
             f.smtp_port AS form_smtp_port,
             f.smtp_user AS form_smtp_user,
@@ -699,6 +741,7 @@ export class Store {
         ...submission,
         projectId: String(row.project_id),
         formName: String(row.form_name),
+        fieldLabels: parseLabels(row.form_field_labels),
         projectLabel: String(row.project_label),
         recipients: parseRecipients(String(row.form_recipients)),
         formSmtp: smtpFrom(

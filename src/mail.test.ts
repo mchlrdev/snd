@@ -52,6 +52,23 @@ async function submitOnce(app: ReturnType<typeof makeApp>["app"], accessKey: str
 }
 
 describe("Mail-Queue", () => {
+  it("schickt Text und HTML mit den Feldtiteln der Form", async () => {
+    const mail = recordingMailer();
+    const { app, operator, queue } = makeApp({ mail });
+    const { form } = setupSite(operator);
+    operator.updateForm(form.id, { fieldLabels: { message: "Ihr Anliegen", name: "  " } });
+    await submitOnce(app, form.accessKey);
+    await queue.tick();
+    const sent = mail.sent[0]?.mail;
+    expect(sent?.replyTo).toBe("ada@example.com");
+    expect(sent?.text).toContain("Ihr Anliegen\nHallo");
+    expect(sent?.text).toContain("Name\nAda");
+    expect(sent?.html).toContain("Ihr Anliegen");
+    expect(sent?.html).toContain("Mo., 2. November 2026");
+    expect(operator.getForm(form.id).fieldLabels).toEqual({ message: "Ihr Anliegen" });
+    expect(operator.getForm(form.id).seenFields).toEqual(["name", "email", "message"]);
+  });
+
   it("benachrichtigt den Operator beim ersten Fehlschlag", async () => {
     const mail = recordingMailer();
     const { app, operator, store, queue } = makeApp({ mail });

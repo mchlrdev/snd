@@ -17,7 +17,7 @@ const mailer = nodemailerMailer();
 const now = () => Date.now();
 const operator = createOperator({ store, box, mailer, config, now });
 operator.ensureMcpToken(config.mcpTokenSeed);
-const queue = new MailQueue(store, mailer, box, now);
+const queue = new MailQueue(store, mailer, box, now, config.timeZone);
 const app = createApp({
   store,
   config,

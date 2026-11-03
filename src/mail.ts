@@ -1,6 +1,7 @@
 import { createTransport } from "nodemailer";
 import type { SecretBox } from "./crypto.js";
 import type { Store } from "./store.js";
+import { DEFAULT_TIMEZONE, renderNotification } from "./notification.js";
 import type { MailJob, SmtpRecord } from "./types.js";
 
 export const MAX_MAIL_ATTEMPTS = 8;
@@ -28,6 +29,7 @@ export type OutgoingMail = {
   replyTo?: string;
   subject: string;
   text: string;
+  html?: string;
 };
 
 export type Mailer = {
@@ -50,6 +52,7 @@ export function nodemailerMailer(): Mailer {
           replyTo: mail.replyTo,
           subject: mail.subject,
           text: mail.text,
+          html: mail.html,
         });
       } finally {
         transport.close();
@@ -80,6 +83,7 @@ export class MailQueue {
     private readonly mailer: Mailer,
     private readonly box: SecretBox,
     private readonly now: () => number,
+    private readonly timeZone: string = DEFAULT_TIMEZONE,
   ) {}
 
   async tick(): Promise<void> {
@@ -101,11 +105,13 @@ export class MailQueue {
     try {
       if (!smtp) throw new Error("Kein SMTP-Konto konfiguriert.");
       const account = decryptSmtp(this.box, smtp);
+      const body = renderNotification(job, this.timeZone);
       await this.mailer.send(account, {
         to: job.recipients,
         replyTo: job.replyTo ?? undefined,
         subject: job.subject?.trim() || `Neue Nachricht: ${job.formName}`,
-        text: renderNotification(job),
+        text: body.text,
+        html: body.html,
       });
       this.store.updateMailState(job.id, {
         mailStatus: "sent",
@@ -170,18 +176,6 @@ export class MailQueue {
       // Operator-Mail darf den Queue-Lauf nicht abbrechen.
     }
   }
-}
-
-export function renderNotification(job: MailJob): string {
-  const lines = [
-    `Neue Nachricht über ${job.formName} (${job.projectLabel})`,
-    `Eingegangen: ${new Date(job.createdAt).toISOString()}`,
-    "",
-  ];
-  for (const [key, value] of Object.entries(job.fields)) {
-    lines.push(`${key}: ${value}`);
-  }
-  return `${lines.join("\n")}\n`;
 }
 
 export async function sendTestMail(

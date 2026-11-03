@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
+import { safeTimeZone } from "./stats.js";
 
 export const DEV_PASSWORD = "snd";
 
@@ -14,6 +15,8 @@ export type Config = {
   secret: string;
   publicUrl: string | null;
   trustProxy: boolean;
+  /** Zeitzone für Datum und Uhrzeit in Benachrichtigungs-Mails. */
+  timeZone: string;
 };
 
 function isProduction(env: NodeJS.ProcessEnv): boolean {
@@ -63,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     secret,
     publicUrl,
     trustProxy: env.SND_TRUST_PROXY === "1" || env.SND_TRUST_PROXY === "true",
+    timeZone: safeTimeZone(env.SND_TIMEZONE?.trim() || undefined),
   };
 }
 
