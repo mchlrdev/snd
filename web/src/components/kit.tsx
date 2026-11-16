@@ -5,6 +5,7 @@ import { fontWeights } from "@/lib/font-weight";
 import { typeClass } from "@/lib/size-context";
 import { cn } from "@/lib/utils";
 import { initials } from "../lib/format";
+import { t } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // App-level building blocks. Everything a page is made of: a grouped section
@@ -154,8 +155,8 @@ export function EmptyState({
   );
 }
 
-/** Copy with a short "Kopiert" acknowledgement in place of the label. */
-export function CopyButton({ value, label = "Kopieren", className }: { value: string; label?: string; className?: string }) {
+/** Copy with a short "Copied" acknowledgement in place of the label. */
+export function CopyButton({ value, label, className }: { value: string; label?: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <Button
@@ -171,7 +172,7 @@ export function CopyButton({ value, label = "Kopieren", className }: { value: st
         });
       }}
     >
-      <span aria-live="polite">{copied ? "Kopiert" : label}</span>
+      <span aria-live="polite">{copied ? t("Copied") : (label ?? t("Copy"))}</span>
     </Button>
   );
 }

@@ -24,8 +24,8 @@ export function submissionsToCsv(items: SubmissionRecord[]): string {
 }
 
 function escapeCsv(raw: string): string {
-  // Formel-Injection: Tabellenprogramme führen Zellen mit =, +, -, @ als Formel aus.
-  // Absender sind öffentlich, also wird so ein Wert als Text markiert.
+  // Formula injection: spreadsheets run cells starting with =, +, -, @ as formulas.
+  // Senders are public, so such a value is marked as text.
   const value = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
   if (/[",\n\r]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
   return value;

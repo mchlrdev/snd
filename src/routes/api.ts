@@ -16,16 +16,29 @@ import type { SubmissionFilter } from "../types.js";
 function optionalNumber(value: string | undefined): number | undefined {
   if (value == null || value === "") return undefined;
   const n = Number(value);
-  if (!Number.isFinite(n)) throw new AppError(400, `Ungültige Zahl: ${value}`);
+  if (!Number.isFinite(n)) throw new AppError(400, `Invalid number: ${value}`);
   return n;
 }
 
 const STATUSES = new Set(["delivered", "pending", "failed"]);
 
-/** Gemeinsame Filter für Nachrichtenlisten und Auswertungen aus der Query. */
+/** Template fields from a request body; anything that is not text is an error. */
+function templateBody(raw: unknown): { name?: string; subject?: string; html?: string; text?: string } {
+  if (!raw || typeof raw !== "object") throw new AppError(400, "Expected a JSON object.");
+  const out: Record<string, string> = {};
+  for (const key of ["name", "subject", "html", "text"]) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== "string") throw new AppError(400, `${key} must be text.`);
+    out[key] = value;
+  }
+  return out;
+}
+
+/** Shared filters for submission lists and stats, read from the query. */
 function filterFromQuery(c: Context): SubmissionFilter {
   const status = c.req.query("status");
-  if (status && !STATUSES.has(status)) throw new AppError(400, "status muss delivered, pending oder failed sein.");
+  if (status && !STATUSES.has(status)) throw new AppError(400, "status must be delivered, pending or failed.");
   return {
     formId: c.req.query("formId") || undefined,
     projectId: c.req.query("projectId") || undefined,
@@ -48,10 +61,10 @@ function secureCookies(config: Config, c: Context): boolean {
 }
 
 /**
- * CSRF-Schutz für schreibende Operator-Requests. Das Cookie ist SameSite=Lax,
- * das schützt aber nicht vor Seiten auf derselben Site (Subdomains). Browser
- * senden bei POST/PATCH/DELETE immer Origin bzw. Sec-Fetch-Site, also lehnen
- * wir alles ab, was nicht von dieser Instanz selbst kommt.
+ * CSRF protection for writing operator requests. The cookie is SameSite=Lax,
+ * which does not protect against pages on the same site (subdomains). Browsers
+ * always send Origin or Sec-Fetch-Site with POST/PATCH/DELETE, so we reject
+ * everything that does not come from this instance itself.
  */
 function sameOrigin(c: Context): boolean {
   const site = c.req.header("sec-fetch-site");
@@ -74,13 +87,13 @@ export function mountApi(
 
   function requireSession(_config: Config, cookie: string | undefined): void {
     if (!sessionValid(env.config.secret, env.config.password, cookie, env.now())) {
-      throw new AppError(401, "Nicht angemeldet.");
+      throw new AppError(401, "Not signed in.");
     }
   }
 
   app.use("/api/*", async (c, next) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD" && !sameOrigin(c)) {
-      throw new AppError(403, "Anfrage von fremder Herkunft abgelehnt.");
+      throw new AppError(403, "Cross-origin request rejected.");
     }
     await next();
     if (!c.res.headers.has("cache-control")) c.header("cache-control", "no-store");
@@ -88,15 +101,15 @@ export function mountApi(
 
   app.post("/api/login", async (c) => {
     const ip = clientIp(c, env.config.trustProxy);
-    // Nur Fehlversuche zählen: wer das Passwort kennt, wird nie ausgesperrt.
+    // Only failed attempts count: whoever knows the password is never locked out.
     if (loginLimiter.exhausted(ip, env.now())) {
-      throw new AppError(429, "Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.");
+      throw new AppError(429, "Too many failed attempts. Please try again in 15 minutes.");
     }
     const body = (await c.req.json().catch(() => ({}))) as { password?: unknown };
     const password = typeof body.password === "string" ? body.password : "";
     if (!secretsEqual(password, env.config.password)) {
       loginLimiter.allow(ip, env.now());
-      throw new AppError(401, "Ungültiges Passwort.");
+      throw new AppError(401, "Invalid password.");
     }
     c.header("set-cookie", createSessionCookie(env.config.secret, env.config.password, env.now(), secureCookies(env.config, c)));
     return c.json({ ok: true });
@@ -187,6 +200,52 @@ export function mountApi(
     return c.json(env.operator.createForm(c.req.param("id"), body, c.req.url), 201);
   });
 
+  app.get("/api/projects/:id/templates", (c) => {
+    requireSession(env.config, c.req.header("cookie"));
+    return c.json(env.operator.listTemplates(c.req.param("id")));
+  });
+
+  app.post("/api/projects/:id/templates", async (c) => {
+    requireSession(env.config, c.req.header("cookie"));
+    const body = templateBody(await c.req.json());
+    return c.json(env.operator.createTemplate(c.req.param("id"), { ...body, name: body.name ?? "" }), 201);
+  });
+
+  app.get("/api/templates/default", (c) => {
+    requireSession(env.config, c.req.header("cookie"));
+    return c.json(env.operator.defaultTemplate());
+  });
+
+  app.post("/api/templates/preview", async (c) => {
+    requireSession(env.config, c.req.header("cookie"));
+    const raw = (await c.req.json()) as Record<string, unknown>;
+    const optional = (key: string) => (typeof raw[key] === "string" ? (raw[key] as string) : undefined);
+    return c.json(
+      env.operator.previewTemplate({
+        ...templateBody(raw),
+        projectId: optional("projectId"),
+        templateId: optional("templateId"),
+        submissionId: optional("submissionId"),
+      }),
+    );
+  });
+
+  app.get("/api/templates/:id", (c) => {
+    requireSession(env.config, c.req.header("cookie"));
+    return c.json(env.operator.getTemplate(c.req.param("id")));
+  });
+
+  app.patch("/api/templates/:id", async (c) => {
+    requireSession(env.config, c.req.header("cookie"));
+    return c.json(env.operator.updateTemplate(c.req.param("id"), templateBody(await c.req.json())));
+  });
+
+  app.delete("/api/templates/:id", (c) => {
+    requireSession(env.config, c.req.header("cookie"));
+    env.operator.deleteTemplate(c.req.param("id"));
+    return c.body(null, 204);
+  });
+
   app.get("/api/forms/:id", (c) => {
     requireSession(env.config, c.req.header("cookie"));
     return c.json(env.operator.getForm(c.req.param("id"), c.req.url));
@@ -263,7 +322,7 @@ export function mountApi(
     requireSession(env.config, c.req.header("cookie"));
     const bucket = c.req.query("bucket");
     if (bucket && bucket !== "day" && bucket !== "week" && bucket !== "month") {
-      throw new AppError(400, "bucket muss day, week oder month sein.");
+      throw new AppError(400, "bucket must be day, week or month.");
     }
     const filter = filterFromQuery(c);
     return c.json(
@@ -285,7 +344,7 @@ export function mountApi(
     return c.body(new Uint8Array(icon.data), 200, {
       "content-type": icon.contentType,
       "cache-control": "private, max-age=86400",
-      // Fremde SVGs dürfen nichts ausführen, auch nicht beim direkten Aufruf.
+      // Foreign SVGs must not run anything, not even when opened directly.
       "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     });
   });

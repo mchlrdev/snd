@@ -29,6 +29,7 @@ import { formWarning, websiteChecks } from "../lib/readiness";
 import { SidebarUserFooter } from "@/components/sidebar-app/user-footer";
 import { CreateWebsiteDialog } from "./CreateDialogs";
 import { SiteIcon } from "./kit";
+import { t } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // The sidebar is the map: overview, then every website with its forms,
@@ -49,7 +50,7 @@ function Warning({ reason }: { reason: string }) {
 
 function websiteWarning(project: Project, forms: Form[]): string | null {
   const open = websiteChecks(project, forms).filter((check) => !check.done);
-  if (open.length) return `Noch offen: ${open.map((check) => check.title).join(", ")}`;
+  if (open.length) return t("Still to do: {items}", { items: open.map((check) => check.title).join(", ") });
   return null;
 }
 
@@ -71,14 +72,14 @@ export function OperatorSidebar(props: Omit<SidebarProps, "children">) {
           type="button"
           onClick={() => navigate("/")}
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="snd – Übersicht"
+          aria-label={t("snd – Overview")}
         >
           <img src="/snd.png" alt="" className="h-8 w-auto" />
         </button>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton icon={LayoutDashboard} isActive={path === "/"} onClick={() => navigate("/")}>
-              Übersicht
+              {t("Overview")}
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -88,8 +89,8 @@ export function OperatorSidebar(props: Omit<SidebarProps, "children">) {
         <SidebarGroup>
           <SidebarGroupLabel>Websites</SidebarGroupLabel>
           <SidebarGroupActions>
-            <Tooltip content="Website hinzufügen" side="top">
-              <SidebarGroupAction aria-label="Website hinzufügen" onClick={() => setCreating(true)}>
+            <Tooltip content={t("Add website")} side="top">
+              <SidebarGroupAction aria-label={t("Add website")} onClick={() => setCreating(true)}>
                 <Plus />
               </SidebarGroupAction>
             </Tooltip>
@@ -104,7 +105,7 @@ export function OperatorSidebar(props: Omit<SidebarProps, "children">) {
                 "mt-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-muted-foreground transition-colors hover:bg-hover hover:text-foreground",
               )}
             >
-              <Plus className="size-3.5" /> Website hinzufügen
+              <Plus className="size-3.5" /> {t("Add website")}
             </button>
           ) : null}
 
@@ -152,7 +153,7 @@ export function OperatorSidebar(props: Omit<SidebarProps, "children">) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton icon={SettingsIcon} isActive={path.startsWith("/settings")} onClick={() => navigate("/settings")}>
-              Einstellungen
+              {t("Settings")}
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -165,13 +166,13 @@ export function OperatorSidebar(props: Omit<SidebarProps, "children">) {
           }
           menu={
             <>
-              <MenuItem index={0} icon={Monitor} label="Wie das System" checked={theme.pref === "system"} onSelect={() => theme.set("system")} />
-              <MenuItem index={1} icon={Sun} label="Hell" checked={theme.pref === "light"} onSelect={() => theme.set("light")} />
-              <MenuItem index={2} icon={Moon} label="Dunkel" checked={theme.pref === "dark"} onSelect={() => theme.set("dark")} />
+              <MenuItem index={0} icon={Monitor} label={t("Match system")} checked={theme.pref === "system"} onSelect={() => theme.set("system")} />
+              <MenuItem index={1} icon={Sun} label={t("Light")} checked={theme.pref === "light"} onSelect={() => theme.set("light")} />
+              <MenuItem index={2} icon={Moon} label={t("Dark")} checked={theme.pref === "dark"} onSelect={() => theme.set("dark")} />
               <MenuItem
                 index={3}
                 icon={LogOut}
-                label="Abmelden"
+                label={t("Sign out")}
                 onSelect={() => {
                   void api.logout().finally(() => navigate("/login"));
                 }}

@@ -13,6 +13,7 @@ import { api } from "../api";
 import { errorText, splitList } from "../lib/format";
 import { originsFor } from "./SettingsWidgets";
 import { useProjects } from "../projects-context";
+import { t } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // Creating is a short, focused interruption: two fields, one decision. That
@@ -40,7 +41,7 @@ export function CreateWebsiteDialog({ open, onOpenChange }: { open: boolean; onO
     event.preventDefault();
     const origins = originsFor(address);
     if (typeof origins === "string") {
-      setError(address.trim() ? origins : "Gib die Adresse der Website an.");
+      setError(address.trim() ? origins : t("Enter the website address."));
       return;
     }
     setBusy(true);
@@ -52,7 +53,7 @@ export function CreateWebsiteDialog({ open, onOpenChange }: { open: boolean; onO
       onOpenChange(false);
       navigate(`/projects/${project.id}`);
     } catch (err) {
-      setError(errorText(err, "Website konnte nicht angelegt werden."));
+      setError(errorText(err, t("The website could not be created.")));
     } finally {
       setBusy(false);
     }
@@ -62,20 +63,20 @@ export function CreateWebsiteDialog({ open, onOpenChange }: { open: boolean; onO
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Website hinzufügen</DialogTitle>
+          <DialogTitle>{t("Add website")}</DialogTitle>
 
         </DialogHeader>
         <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
           <InputGroup className="w-full max-w-none">
             <InputField
               index={0}
-              label="Adresse der Website"
+              label={t("Website address")}
               value={address}
               onChange={(next) => {
                 setAddress(next);
                 setError(null);
               }}
-              placeholder="baeckerei-mueller.de"
+              placeholder={t("millers-bakery.com")}
               inputMode="url"
               autoComplete="off"
               spellCheck={false}
@@ -84,21 +85,21 @@ export function CreateWebsiteDialog({ open, onOpenChange }: { open: boolean; onO
             />
             <InputField
               index={1}
-              label="Name"
+              label={t("Name")}
               value={label}
               onChange={setLabel}
               placeholder={(() => {
                 const parsed = originsFor(address);
-                return typeof parsed === "string" ? "Bäckerei Müller" : new URL(parsed[0]!).host;
+                return typeof parsed === "string" ? t("Miller's Bakery") : new URL(parsed[0]!).host;
               })()}
             />
           </InputGroup>
           <DialogFooter className="mt-0">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Abbrechen
+              {t("Cancel")}
             </Button>
             <Button type="submit" variant="primary" loading={busy} disabled={busy}>
-              Hinzufügen
+              {t("Add")}
             </Button>
           </DialogFooter>
         </form>
@@ -136,12 +137,12 @@ export function CreateFormDialog({
     setBusy(true);
     setError(null);
     try {
-      const form = await api.createForm(projectId, { name: name.trim() || "Kontakt", recipients: splitList(recipients) });
+      const form = await api.createForm(projectId, { name: name.trim() || t("Contact"), recipients: splitList(recipients) });
       await reload();
       onOpenChange(false);
-      navigate(`/forms/${form.id}?tab=einbinden`);
+      navigate(`/forms/${form.id}?tab=embed`);
     } catch (err) {
-      setError(errorText(err, "Formular konnte nicht angelegt werden."));
+      setError(errorText(err, t("The form could not be created.")));
     } finally {
       setBusy(false);
     }
@@ -151,18 +152,18 @@ export function CreateFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Formular anlegen</DialogTitle>
+          <DialogTitle>{t("Create form")}</DialogTitle>
 
         </DialogHeader>
         <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
           <InputGroup className="w-full max-w-none">
-            <InputField index={0} label="Name" value={name} onChange={setName} placeholder="Kontakt" autoFocus />
+            <InputField index={0} label={t("Name")} value={name} onChange={setName} placeholder={t("Contact")} autoFocus />
             <InputField
               index={1}
-              label="Nachrichten schicken an"
+              label={t("Send messages to")}
               value={recipients}
               onChange={setRecipients}
-              placeholder="info@beispiel.de"
+              placeholder={t("info@example.com")}
               type="text"
               inputMode="email"
               error={error ?? undefined}
@@ -170,10 +171,10 @@ export function CreateFormDialog({
           </InputGroup>
           <DialogFooter className="mt-0">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Abbrechen
+              {t("Cancel")}
             </Button>
             <Button type="submit" variant="primary" loading={busy} disabled={busy}>
-              Anlegen
+              {t("Create")}
             </Button>
           </DialogFooter>
         </form>

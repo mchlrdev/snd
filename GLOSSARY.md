@@ -24,6 +24,10 @@ _Avoid_: Entry, Eintrag, Lead, Message
 The email snd sends to a Form's recipients with a Submission's data.
 _Avoid_: Mail, Alert
 
+**Mail Template**:
+The subject, HTML and text a Notification is rendered from. Belongs to a Project; a Form uses one of its Project's templates or the built-in default.
+_Avoid_: Layout, Theme
+
 **SMTP Config**:
 Host, port, credentials, and From used to send mail. One on Operator settings (admin mail), one on each Project (default for Notifications), optionally overridden on a Form.
 _Avoid_: Mailer, Transport

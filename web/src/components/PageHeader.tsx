@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { typeClass } from "@/lib/size-context";
 import { fontWeights } from "@/lib/font-weight";
 import type { IconComponent } from "@/lib/icon-context";
+import { t } from "@/lib/i18n";
 
 export function PageHeader({
   parent,
@@ -88,7 +89,7 @@ export function PageTabs({ tabs, index, onSelect }: { tabs: PageTab[]; index: nu
     <div className="-mx-1 overflow-x-auto px-1 pb-0.5">
       <Tabs selectedIndex={index} onSelect={onSelect} size="compact" className="w-max">
         {tabs.map((tab, i) => (
-          <TabsItem key={tab.key} index={i} label={tab.label} icon={tab.icon} />
+          <TabsItem key={tab.key} index={i} label={t(tab.label)} icon={tab.icon} />
         ))}
       </Tabs>
     </div>

@@ -7,6 +7,7 @@ import { typeClass } from "@/lib/size-context";
 import { cn } from "@/lib/utils";
 import type { NotifyPolicy } from "../api";
 import { hostOf, NOTIFY_LABEL, toOrigin } from "../lib/format";
+import { t } from "@/lib/i18n";
 
 export function NotifyChoice({
   value,
@@ -19,9 +20,9 @@ export function NotifyChoice({
 }) {
   const options: { value: NotifyPolicy | "inherit"; label: string }[] = [
     ...(inheritLabel ? [{ value: "inherit" as const, label: inheritLabel }] : []),
-    { value: "immediate", label: NOTIFY_LABEL.immediate },
-    { value: "abandoned", label: NOTIFY_LABEL.abandoned },
-    { value: "off", label: NOTIFY_LABEL.off },
+    { value: "immediate", label: t(NOTIFY_LABEL.immediate) },
+    { value: "abandoned", label: t(NOTIFY_LABEL.abandoned) },
+    { value: "off", label: t(NOTIFY_LABEL.off) },
   ];
   return (
     <RadioGroup value={value} onValueChange={(next) => onChange(next as NotifyPolicy | "inherit")} className="w-full max-w-lg">
@@ -86,7 +87,7 @@ function ChipList({
               {display(key)}
               <button
                 type="button"
-                aria-label={`${display(key)} entfernen`}
+                aria-label={t("Remove {name}", { name: display(key) })}
                 onClick={() => onChange(value.filter((item) => group(item) !== key))}
                 className="ml-0.5 flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
               >
@@ -121,14 +122,14 @@ function ChipList({
           />
         </InputGroup>
         <Button type="button" variant="secondary" leadingIcon={Plus} onClick={add} disabled={!draft.trim()}>
-          Hinzufügen
+          {t("Add")}
         </Button>
       </div>
     </div>
   );
 }
 
-/** "beispiel.de" → https://beispiel.de and https://www.beispiel.de, because
+/** "example.com" → https://example.com and https://www.example.com, because
  *  visitors reach most sites both ways. Other subdomains stay as typed. */
 export function originsFor(raw: string): string[] | string {
   const origin = toOrigin(raw);
@@ -137,7 +138,7 @@ export function originsFor(raw: string): string[] | string {
     url = new URL(origin);
     if (!url.hostname.includes(".")) throw new Error();
   } catch {
-    return "Das sieht nicht wie eine Web-Adresse aus.";
+    return t("That doesn't look like a web address.");
   }
   const host = url.host.replace(/^www\./, "");
   const isApex = host.split(".").length === 2 || url.host.startsWith("www.");
@@ -154,8 +155,8 @@ export function OriginsEditor({ value, onChange }: { value: string[]; onChange: 
     <ChipList
       value={value}
       onChange={onChange}
-      label={value.length ? "Weitere Adresse" : "Adresse der Website"}
-      placeholder="beispiel.de"
+      label={value.length ? t("Another address") : t("Website address")}
+      placeholder={t("example.com")}
       inputMode="url"
       parse={originsFor}
       group={siteKey}
@@ -168,10 +169,10 @@ export function RecipientsEditor({ value, onChange }: { value: string[]; onChang
     <ChipList
       value={value}
       onChange={onChange}
-      label={value.length ? "Weitere Adresse" : "E-Mail-Adresse"}
-      placeholder="info@beispiel.de"
+      label={value.length ? t("Another address") : t("Email address")}
+      placeholder={t("info@example.com")}
       inputMode="email"
-      parse={(raw) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? [raw.toLowerCase()] : "Das ist keine E-Mail-Adresse.")}
+      parse={(raw) => (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? [raw.toLowerCase()] : t("That is not an email address."))}
     />
   );
 }

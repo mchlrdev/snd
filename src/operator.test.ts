@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { cookieFrom, makeApp } from "./test-helpers.js";
 
-describe("Operator-API", () => {
-  it("lehnt falsches Passwort ab und setzt nach Login ein Cookie", async () => {
+describe("operator API", () => {
+  it("rejects a wrong password and sets a cookie after login", async () => {
     const { app, config } = makeApp();
     const bad = await app.request("https://snd.test/api/login", {
       method: "POST",
@@ -21,14 +21,14 @@ describe("Operator-API", () => {
     expect(me.status).toBe(200);
   });
 
-  it("legt eine Seite ohne Origins an", async () => {
+  it("creates a website without origins", async () => {
     const { operator } = makeApp();
     const project = operator.createProject({ label: "Leer" });
     expect(project.origins).toEqual([]);
     expect(project.notifyPolicy).toBeNull();
   });
 
-  it("legt Project und Form an, ohne SMTP-Passwörter zurückzugeben", async () => {
+  it("creates project and form without returning SMTP passwords", async () => {
     const { operator } = makeApp();
     const project = operator.createProject({
       label: "Kirche",
@@ -52,7 +52,7 @@ describe("Operator-API", () => {
     expect(form.snippet).toContain("https://snd.test/submit");
   });
 
-  it("exportiert CSV und löscht eine Submission", async () => {
+  it("exports CSV and deletes a submission", async () => {
     const { app, operator, store } = makeApp();
     const project = operator.createProject({
       label: "Site",
@@ -90,13 +90,13 @@ describe("Operator-API", () => {
     expect(store.countSubmissions({ formId: form.id })).toBe(0);
   });
 
-  it("weist MCP ohne Bearer ab", async () => {
+  it("rejects MCP without a bearer", async () => {
     const { app } = makeApp();
     const res = await app.request("https://snd.test/mcp", { method: "POST" });
     expect(res.status).toBe(401);
   });
 
-  it("nimmt MCP-Bearer aus den Settings und invalidiert ihn beim Rotieren", async () => {
+  it("takes the MCP bearer from settings and invalidates it on rotation", async () => {
     const { app, operator } = makeApp();
     const token = operator.getSettings().mcpToken;
     expect(token).toBe("test-mcp-token-ok");

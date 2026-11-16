@@ -6,6 +6,7 @@ import { typeClass } from "@/lib/size-context";
 import { spring } from "@/lib/springs";
 import { cn } from "@/lib/utils";
 import { errorText } from "../lib/format";
+import { t } from "@/lib/i18n";
 
 type SaveState = { kind: "idle" } | { kind: "busy" } | { kind: "saved" } | { kind: "error"; message: string };
 
@@ -23,7 +24,7 @@ export function useSave() {
       timer.current = window.setTimeout(() => setState({ kind: "idle" }), 2400);
       return true;
     } catch (err) {
-      setState({ kind: "error", message: errorText(err, "Speichern fehlgeschlagen.") });
+      setState({ kind: "error", message: errorText(err, t("Saving failed.")) });
       return false;
     }
   }, []);
@@ -34,7 +35,7 @@ export function useSave() {
 export function SaveFooter({
   state,
   dirty,
-  label = "Speichern",
+  label,
   onSave,
   extra,
 }: {
@@ -70,7 +71,7 @@ export function SaveFooter({
               className={cn(typeClass("caption", "compact"), "flex items-center gap-1 text-muted-foreground")}
               role="status"
             >
-              <Check className="size-3.5" /> Gespeichert
+              <Check className="size-3.5" /> {t("Saved")}
             </motion.p>
           ) : dirty ? (
             <motion.p
@@ -81,7 +82,7 @@ export function SaveFooter({
               transition={spring.fast}
               className={cn(typeClass("caption", "compact"), "text-muted-foreground")}
             >
-              Ungespeicherte Änderungen
+              {t("Unsaved changes")}
             </motion.p>
           ) : null}
         </AnimatePresence>
@@ -95,7 +96,7 @@ export function SaveFooter({
         disabled={!dirty || state.kind === "busy"}
         onClick={onSave}
       >
-        {label}
+        {label ?? t("Save")}
       </Button>
     </>
   );

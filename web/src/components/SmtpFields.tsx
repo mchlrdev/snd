@@ -7,6 +7,7 @@ import { typeClass } from "@/lib/size-context";
 import { cn } from "@/lib/utils";
 import type { SmtpInput, SmtpView } from "../api";
 import { errorText } from "../lib/format";
+import { t } from "@/lib/i18n";
 
 export type SmtpDraft = {
   host: string;
@@ -41,10 +42,10 @@ export function smtpFromDraft(draft: SmtpDraft): SmtpInput | null {
 
 /** What is still missing before the account can be saved. */
 export function smtpProblem(draft: SmtpDraft, passwordSet: boolean): string | null {
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.from.trim())) return "Gib die E-Mail-Adresse des Postfachs an.";
-  if (!draft.password && !passwordSet) return "Das Passwort fehlt.";
-  if (!draft.host.trim()) return "Wähle deinen Anbieter oder trag den Server ein.";
-  if (draft.port && !/^\d+$/.test(draft.port)) return "Der Port ist eine Zahl.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.from.trim())) return t("Enter the mailbox's email address.");
+  if (!draft.password && !passwordSet) return t("The password is missing.");
+  if (!draft.host.trim()) return t("Pick your provider or enter the server.");
+  if (draft.port && !/^\d+$/.test(draft.port)) return t("The port must be a number.");
   return null;
 }
 
@@ -79,7 +80,7 @@ const PROVIDERS: Provider[] = [
   },
   { key: "gmx", label: "GMX", host: "mail.gmx.net", port: "587", domains: ["gmx.de", "gmx.net", "gmx.at", "gmx.ch"] },
   { key: "webde", label: "WEB.DE", host: "smtp.web.de", port: "587", domains: ["web.de"] },
-  { key: "custom", label: "Anderer Anbieter", host: "", port: "587" },
+  { key: "custom", label: "Other provider", host: "", port: "587" },
 ];
 
 function providerForHost(host: string): string {
@@ -94,7 +95,7 @@ function providerForAddress(address: string): Provider | undefined {
 
 /** Most people know their e-mail address and password, not their SMTP
  *  server. Pick the provider and those two fields are all there is; the
- *  technical fields appear only for "Anderer Anbieter". */
+ *  technical fields appear only for "Other provider". */
 export function SmtpFields({
   value,
   onChange,
@@ -120,7 +121,7 @@ export function SmtpFields({
       <InputGroup className="w-full max-w-none">
         <InputField
           index={0}
-          label="E-Mail-Adresse"
+          label={t("Email address")}
           value={value.from}
           onChange={(next) => {
             const guess = providerForAddress(next);
@@ -131,30 +132,30 @@ export function SmtpFields({
               set("from")(next);
             }
           }}
-          placeholder="kontakt@beispiel.de"
+          placeholder={t("contact@example.com")}
           inputMode="email"
           autoComplete="off"
           spellCheck={false}
         />
         <InputField
           index={1}
-          label="Passwort"
+          label={t("Password")}
           type="password"
           value={value.password}
           onChange={set("password")}
-          placeholder={passwordSet ? "••••••••  (gespeichert)" : ""}
+          placeholder={passwordSet ? t("••••••••  (saved)") : ""}
           autoComplete="new-password"
         />
       </InputGroup>
 
       <div className="flex flex-col gap-1.5">
-        <span className={cn(typeClass("caption", "compact"), "pl-2.5 text-muted-foreground")}>Anbieter</span>
+        <span className={cn(typeClass("caption", "compact"), "pl-2.5 text-muted-foreground")}>{t("Provider")}</span>
         <Select value={providerKey} onValueChange={choose}>
-          <SelectTrigger placeholder="Anbieter wählen" className="w-full" />
+          <SelectTrigger placeholder={t("Choose provider")} className="w-full" />
           <SelectContent>
             {PROVIDERS.map((item, index) => (
               <SelectItem key={item.key} index={index} value={item.key}>
-                {item.label}
+                {t(item.label)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -166,7 +167,7 @@ export function SmtpFields({
             rel="noreferrer"
             className={cn(typeClass("caption", "compact"), "inline-flex items-center gap-1 self-start pl-2.5 text-foreground underline underline-offset-2")}
           >
-            App-Passwort bei Google erstellen <ExternalLink className="size-3" />
+            {t("Create an app password at Google")} <ExternalLink className="size-3" />
           </a>
         ) : null}
       </div>
@@ -178,17 +179,17 @@ export function SmtpFields({
             label="Server"
             value={value.host}
             onChange={set("host")}
-            placeholder="smtp.beispiel.de"
+            placeholder={t("smtp.example.com")}
             autoComplete="off"
             spellCheck={false}
           />
           <InputField index={1} label="Port" value={value.port} onChange={set("port")} placeholder="587" inputMode="numeric" />
           <InputField
             index={2}
-            label="Benutzername"
+            label={t("Username")}
             value={value.user}
             onChange={set("user")}
-            placeholder={value.from || "wie die E-Mail-Adresse"}
+            placeholder={value.from || t("same as the email address")}
             autoComplete="off"
             spellCheck={false}
           />
@@ -219,15 +220,15 @@ export function SmtpTest({
           event.preventDefault();
           setState({ kind: "busy" });
           onTest(to.trim())
-            .then(() => setState({ kind: "ok", message: `Testmail an ${to.trim()} ist raus – schau in dein Postfach.` }))
-            .catch((err: unknown) => setState({ kind: "error", message: errorText(err, "Test fehlgeschlagen.") }));
+            .then(() => setState({ kind: "ok", message: t("Test mail to {to} is on its way – check your inbox.", { to: to.trim() }) }))
+            .catch((err: unknown) => setState({ kind: "error", message: errorText(err, t("Test failed.")) }));
         }}
       >
         <InputGroup className="w-full max-w-none flex-1">
-          <InputField index={0} label="Testmail senden an" value={to} onChange={setTo} placeholder="du@beispiel.de" inputMode="email" />
+          <InputField index={0} label={t("Send test mail to")} value={to} onChange={setTo} placeholder={t("you@example.com")} inputMode="email" />
         </InputGroup>
         <Button type="submit" variant="secondary" leadingIcon={Send} loading={state.kind === "busy"} disabled={!to.includes("@") || state.kind === "busy"}>
-          Senden
+          {t("Send")}
         </Button>
       </form>
       {state.kind === "ok" ? (

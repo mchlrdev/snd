@@ -7,8 +7,8 @@ const PAGE_LIMIT = 512 * 1024;
 const ICON_LIMIT = 256 * 1024;
 const TIMEOUT_MS = 5000;
 
-/** Nur öffentliche http(s)-Ziele. Die Adressen kommen vom Operator, aber
- *  snd soll nicht als Werkzeug für Anfragen ins interne Netz dienen. */
+/** Public http(s) targets only. The addresses come from the operator, but
+ *  snd must not become a tool for requests into the internal network. */
 export function publicHttpUrl(raw: string): URL | null {
   let url: URL;
   try {

@@ -1,4 +1,5 @@
 import { AppError } from "./errors.js";
+import { tr } from "./i18n.js";
 import type { SubmitLimits } from "./limits.js";
 import { originAllowed, originFromRequest } from "./origin.js";
 import type { Store } from "./store.js";
@@ -8,6 +9,11 @@ export const MAX_FIELDS = 50;
 export const MAX_BODY_BYTES = 100 * 1024;
 
 const RESERVED = new Set(["access_key", "redirect", "botcheck", "cf-turnstile-response"]);
+
+/** `label:<field>` carries the title of a field for the mail, e.g.
+ *  <input type="hidden" name="label:message" value="Your request">. */
+export const LABEL_PREFIX = "label:";
+const MAX_LABEL_LENGTH = 200;
 
 export type TurnstileResult = "ok" | "denied" | "unavailable";
 
@@ -59,38 +65,44 @@ export async function acceptSubmission(
   verify: TurnstileVerifier,
   decryptTurnstile: (enc: string) => string,
 ): Promise<SubmitOk> {
+  const locale = store.getSettings().locale;
+  const fail = (status: number, message: string) => new AppError(status, tr(locale, message));
   if (input.bodyBytes > MAX_BODY_BYTES) {
-    throw new AppError(413, "Formular ist zu groß.");
+    throw fail(413, "Form is too large.");
   }
+  // Titles don't count as fields, so a form can label every one of them.
   const keys = Object.keys(input.fields);
-  if (keys.length > MAX_FIELDS) {
-    throw new AppError(400, "Zu viele Felder.");
+  const labelKeys = keys.filter((key) => key.startsWith(LABEL_PREFIX));
+  if (keys.length - labelKeys.length > MAX_FIELDS || labelKeys.length > MAX_FIELDS) {
+    throw fail(400, "Too many fields.");
   }
 
   const accessKey = input.fields.access_key?.trim() ?? "";
   if (!accessKey) {
-    throw new AppError(400, "Formular nicht gefunden.");
+    throw fail(400, "Form not found.");
   }
   const form = store.getFormByAccessKey(accessKey);
   if (!form) {
-    throw new AppError(400, "Formular nicht gefunden.");
+    throw fail(400, "Form not found.");
   }
   const project = store.getProject(form.projectId);
   if (!project) {
-    throw new AppError(400, "Formular nicht gefunden.");
+    throw fail(400, "Form not found.");
   }
 
   const origin = originFromRequest(input.originHeader, input.referer);
   if (!origin || !originAllowed(origin, project.origins)) {
-    throw new AppError(403, "Diese Website darf hier nicht absenden.");
+    throw fail(403, "This website is not allowed to submit here.");
   }
 
   const redirect = input.fields.redirect?.trim() || null;
   if (redirect && !originAllowed(redirect, project.origins)) {
-    throw new AppError(400, "redirect zeigt nicht auf eine erlaubte Origin.");
+    throw fail(400, "redirect does not point to an allowed origin.");
   }
+  // A plain form post needs somewhere to go afterwards; snd shows no pages
+  // of its own. Sites that send with JavaScript ask for JSON instead.
   if (!input.wantsJson && !redirect) {
-    throw new AppError(400, "Kein redirect und keine JSON-Antwort angefordert.");
+    throw fail(400, "No redirect given and no JSON response requested.");
   }
 
   if ((input.fields.botcheck ?? "").trim() !== "") {
@@ -98,10 +110,10 @@ export async function acceptSubmission(
   }
 
   if (!limits.ip.allow(input.ip, input.now)) {
-    throw new AppError(429, "Zu viele Absendungen. Bitte kurz warten.");
+    throw fail(429, "Too many submissions. Please wait a moment.");
   }
   if (!limits.form.allow(form.id, input.now)) {
-    throw new AppError(429, "Zu viele Absendungen. Bitte kurz warten.");
+    throw fail(429, "Too many submissions. Please wait a moment.");
   }
 
   if (form.turnstileSecretEnc) {
@@ -109,20 +121,28 @@ export async function acceptSubmission(
     const token = input.fields["cf-turnstile-response"] ?? "";
     const result = await verify(secret, token);
     if (result !== "ok") {
-      throw new AppError(400, "Bitte nochmal absenden.");
+      throw fail(400, "Please submit again.");
     }
   }
 
   const storedFields: Record<string, string> = {};
   for (const [key, value] of Object.entries(input.fields)) {
-    if (RESERVED.has(key)) continue;
+    if (RESERVED.has(key) || key.startsWith(LABEL_PREFIX)) continue;
     storedFields[key] = value;
+  }
+  const fieldLabels: Record<string, string> = {};
+  for (const key of labelKeys) {
+    const name = key.slice(LABEL_PREFIX.length);
+    // eslint-disable-next-line no-control-regex
+    const title = (input.fields[key] ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, MAX_LABEL_LENGTH);
+    if (title && Object.hasOwn(storedFields, name)) fieldLabels[name] = title;
   }
   const replyTo = pickReplyTo(input.fields);
   const subject = input.fields.subject?.trim() || null;
   const submission = store.createSubmission({
     formId: form.id,
     fields: storedFields,
+    fieldLabels,
     replyTo,
     subject,
     now: input.now,

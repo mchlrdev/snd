@@ -28,7 +28,7 @@ export function normalizeOrigins(origins: string[]): string[] {
     if (!trimmed) continue;
     const origin = canonicalOrigin(trimmed);
     if (!origin) {
-      throw new Error(`Ungültige Origin: ${raw}`);
+      throw new Error(`Invalid origin: ${raw}`);
     }
     if (!out.includes(origin)) out.push(origin);
   }

@@ -18,7 +18,7 @@ function apply(pref: ThemePreference) {
   document.documentElement.classList.toggle("dark", dark);
 }
 
-/** Hell, dunkel oder wie das System. "System" folgt Änderungen live. */
+/** Light, dark or like the system. "System" follows changes live. */
 export function useTheme() {
   const [pref, setPref] = useState<ThemePreference>(read);
   useEffect(() => {
@@ -35,7 +35,7 @@ export function useTheme() {
       try {
         localStorage.setItem(KEY, next);
       } catch {
-        // Ohne Speicher gilt die Wahl bis zum Neuladen.
+        // Without storage the choice lasts until the next reload.
       }
       setPref(next);
     },

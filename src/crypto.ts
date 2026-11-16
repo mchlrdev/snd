@@ -24,7 +24,7 @@ export function createSecretBox(secret: string): SecretBox {
     },
     decrypt(token: string): string {
       const buf = Buffer.from(token, "base64url");
-      if (buf.length < 29) throw new Error("Ungültiges Geheimnis.");
+      if (buf.length < 29) throw new Error("Invalid secret.");
       const iv = buf.subarray(0, 12);
       const tag = buf.subarray(12, 28);
       const enc = buf.subarray(28);
@@ -62,7 +62,7 @@ export function verifySession(secret: string, password: string, token: string, n
   try {
     const { iat } = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { iat?: unknown };
     if (typeof iat !== "number" || !Number.isFinite(iat)) return false;
-    // Sitzungen laufen ab, damit ein einmal kopiertes Cookie nicht ewig gilt.
+    // Sessions expire so a copied cookie does not stay valid forever.
     return now - iat >= -60_000 && now - iat < SESSION_MAX_AGE_MS;
   } catch {
     return false;

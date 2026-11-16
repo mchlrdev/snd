@@ -9,7 +9,7 @@ function emptyDir(): string {
 }
 
 describe("loadConfig", () => {
-  it("nutzt lokal das Passwort snd und legt data/secret an", () => {
+  it("uses the password snd locally and creates data/secret", () => {
     const dataDir = emptyDir();
     const config = loadConfig({ SND_DATA_DIR: dataDir });
     expect(config.password).toBe(DEV_PASSWORD);
@@ -26,7 +26,7 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ NODE_ENV: "production", SND_DATA_DIR: dataDir })).toThrow(/SND_PASSWORD/);
   });
 
-  it("nimmt SND_SECRET aus der Umgebung, wenn gesetzt", () => {
+  it("takes SND_SECRET from the environment when set", () => {
     const dataDir = emptyDir();
     const config = loadConfig({
       SND_PASSWORD: "op",

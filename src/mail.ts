@@ -103,13 +103,16 @@ export class MailQueue {
     const attempts = job.mailAttempts + 1;
     const smtp = resolveSmtp(job);
     try {
-      if (!smtp) throw new Error("Kein SMTP-Konto konfiguriert.");
+      if (!smtp) throw new Error("No SMTP account configured.");
       const account = decryptSmtp(this.box, smtp);
-      const body = renderNotification(job, this.timeZone);
+      const body = renderNotification(job, { timeZone: this.timeZone, locale: job.locale, template: job.template });
+      if (body.templateError) {
+        console.warn(`Mail template of form ${job.formId} failed, sent the default instead: ${body.templateError}`);
+      }
       await this.mailer.send(account, {
         to: job.recipients,
         replyTo: job.replyTo ?? undefined,
-        subject: job.subject?.trim() || `Neue Nachricht: ${job.formName}`,
+        subject: body.subject,
         text: body.text,
         html: body.html,
       });
@@ -159,8 +162,8 @@ export class MailQueue {
       const account = decryptSmtp(this.box, settings.adminSmtp);
       const subject =
         event === "abandoned"
-          ? `snd: Versand aufgegeben (${job.formName})`
-          : `snd: Versand fehlgeschlagen (${job.formName})`;
+          ? `snd: delivery abandoned (${job.formName})`
+          : `snd: delivery failed (${job.formName})`;
       await this.mailer.send(account, {
         to: [account.from],
         subject,
@@ -168,12 +171,12 @@ export class MailQueue {
           `Project: ${job.projectLabel}`,
           `Form: ${job.formName}`,
           `Submission: ${job.id}`,
-          `Versuch: ${attempts}/${MAX_MAIL_ATTEMPTS}`,
-          `Fehler: ${error}`,
+          `Attempt: ${attempts}/${MAX_MAIL_ATTEMPTS}`,
+          `Error: ${error}`,
         ].join("\n"),
       });
     } catch {
-      // Operator-Mail darf den Queue-Lauf nicht abbrechen.
+      // The operator mail must not abort the queue run.
     }
   }
 }
@@ -188,7 +191,7 @@ export async function sendTestMail(
   await mailer.send(account, {
     to: [to],
     subject: "snd Test",
-    text: "Diese Nachricht bestätigt, dass das SMTP-Konto in snd funktioniert.\n",
+    text: "This message confirms that the SMTP account works in snd.\n",
   });
 }
 

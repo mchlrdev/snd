@@ -15,7 +15,7 @@ export type Config = {
   secret: string;
   publicUrl: string | null;
   trustProxy: boolean;
-  /** Zeitzone für Datum und Uhrzeit in Benachrichtigungs-Mails. */
+  /** Time zone for the date and time in notification mails. */
   timeZone: string;
 };
 
@@ -27,7 +27,7 @@ function resolveSecret(env: NodeJS.ProcessEnv, dataDir: string): string {
   const fromEnv = env.SND_SECRET?.trim() ?? "";
   if (fromEnv) {
     if (fromEnv.length < 16) {
-      throw new Error("SND_SECRET muss mindestens 16 Zeichen haben.");
+      throw new Error("SND_SECRET must be at least 16 characters long.");
     }
     return fromEnv;
   }
@@ -35,7 +35,7 @@ function resolveSecret(env: NodeJS.ProcessEnv, dataDir: string): string {
   if (existsSync(file)) {
     const stored = readFileSync(file, "utf8").trim();
     if (stored.length < 16) {
-      throw new Error("Gespeicherter Schlüssel in data/secret ist zu kurz.");
+      throw new Error("The stored key in data/secret is too short.");
     }
     return stored;
   }
@@ -50,7 +50,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const production = isProduction(env);
   const fromEnv = env.SND_PASSWORD?.trim() ?? "";
   if (!fromEnv && production) {
-    throw new Error("SND_PASSWORD muss gesetzt sein.");
+    throw new Error("SND_PASSWORD must be set.");
   }
   const passwordIsDefault = !fromEnv;
   const password = fromEnv || DEV_PASSWORD;

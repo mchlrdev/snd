@@ -1,41 +1,44 @@
 import type { NotifyPolicy, Submission } from "../api";
+import { intlLocale, t } from "./i18n";
+export { intlLocale } from "./i18n";
+
 
 export function formatWhen(ms: number): string {
-  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(ms));
+  return new Intl.DateTimeFormat(intlLocale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(ms));
 }
 
-/** "vor 5 Min.", "gestern", sonst Datum. Für Listen, in denen man scannt. */
+/** "5 min ago", "yesterday", otherwise the date. For lists people scan. */
 export function formatRelative(ms: number, now = Date.now()): string {
   const diff = now - ms;
   const minute = 60_000;
   const hour = 60 * minute;
-  if (diff < minute) return "gerade eben";
-  if (diff < hour) return `vor ${Math.floor(diff / minute)} Min.`;
+  if (diff < minute) return t("just now");
+  if (diff < hour) return t("{n} min ago", { n: Math.floor(diff / minute) });
   const then = new Date(ms);
   const today = new Date(now);
   const sameDay = then.toDateString() === today.toDateString();
-  if (sameDay) return new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(then);
+  if (sameDay) return new Intl.DateTimeFormat(intlLocale(), { timeStyle: "short" }).format(then);
   const yesterday = new Date(now - 24 * hour);
-  if (then.toDateString() === yesterday.toDateString()) return "gestern";
-  return new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "short" }).format(then);
+  if (then.toDateString() === yesterday.toDateString()) return t("yesterday");
+  return new Intl.DateTimeFormat(intlLocale(), { day: "numeric", month: "short" }).format(then);
 }
 
 export const NOTIFY_LABEL: Record<NotifyPolicy, string> = {
-  immediate: "Sofort beim ersten Fehlversuch",
-  abandoned: "Erst wenn sie endgültig nicht ankommt",
-  off: "Nie",
+  immediate: "Right after the first failed attempt",
+  abandoned: "Only when it finally can't be delivered",
+  off: "Never",
 };
 
 export function notifyLabel(policy: NotifyPolicy | null, inherited: string): string {
   if (policy == null) return inherited;
-  return NOTIFY_LABEL[policy];
+  return t(NOTIFY_LABEL[policy]);
 }
 
 export function mailLabel(status: Submission["mailStatus"]): string {
-  if (status === "sent") return "Zugestellt";
-  if (status === "queued") return "Wird gesendet";
-  if (status === "failed") return "Neuer Versuch geplant";
-  if (status === "abandoned") return "Nicht zugestellt";
+  if (status === "sent") return t("Delivered");
+  if (status === "queued") return t("Sending");
+  if (status === "failed") return t("Retry scheduled");
+  if (status === "abandoned") return t("Not delivered");
   return status;
 }
 
@@ -53,18 +56,18 @@ export function splitList(value: string): string[] {
     .filter(Boolean);
 }
 
-/** Wer hat geschrieben? Name-Feld, sonst Antwortadresse, sonst neutral. */
+/** Who wrote? The name field, otherwise the reply address, otherwise neutral. */
 export function senderOf(item: Submission): string {
   const f = item.fields;
   const name = f.name ?? f.Name ?? f.vorname ?? f.firstname;
   if (name?.trim()) return name.trim();
   if (item.replyTo) return item.replyTo;
-  return "Unbekannter Absender";
+  return t("Unknown sender");
 }
 
 const MESSAGE_KEYS = ["message", "nachricht", "Message", "Nachricht", "text", "comment", "kommentar"];
 
-/** Eine Zeile Vorschau: das Nachrichtenfeld, sonst das längste Feld. */
+/** A one-line preview: the message field, otherwise the longest field. */
 export function previewOf(item: Submission): string {
   for (const key of MESSAGE_KEYS) {
     const value = item.fields[key];
@@ -72,7 +75,7 @@ export function previewOf(item: Submission): string {
   }
   if (item.subject) return item.subject;
   const longest = Object.values(item.fields).sort((a, b) => b.length - a.length)[0];
-  return longest?.trim() || "Keine Inhalte";
+  return longest?.trim() || t("No content");
 }
 
 export function initials(label: string): string {
@@ -90,7 +93,7 @@ export function hostOf(origin: string): string {
   }
 }
 
-/** Origin aus dem, was Laien eintippen: "beispiel.de" → "https://beispiel.de". */
+/** Origin from what people type: "example.com" → "https://example.com". */
 export function toOrigin(value: string): string {
   const trimmed = value.trim().replace(/\/+$/, "");
   if (!trimmed) return "";
@@ -109,13 +112,13 @@ export function errorText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-/** "in 4 Min.", "um 14:30", sonst Datum und Uhrzeit. */
+/** "in 4 min", "at 14:30", otherwise date and time. */
 export function formatUntil(ms: number, now = Date.now()): string {
   const diff = ms - now;
-  if (diff <= 60_000) return "gleich";
-  if (diff < 60 * 60_000) return `in ${Math.ceil(diff / 60_000)} Min.`;
+  if (diff <= 60_000) return t("shortly");
+  if (diff < 60 * 60_000) return t("in {n} min", { n: Math.ceil(diff / 60_000) });
   if (new Date(ms).toDateString() === new Date(now).toDateString()) {
-    return `um ${new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(new Date(ms))}`;
+    return t("at {time}", { time: new Intl.DateTimeFormat(intlLocale(), { timeStyle: "short" }).format(new Date(ms)) });
   }
-  return `am ${formatWhen(ms)}`;
+  return t("on {date}", { date: formatWhen(ms) });
 }

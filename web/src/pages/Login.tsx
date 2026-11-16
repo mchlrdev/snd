@@ -5,6 +5,7 @@ import { InputField, InputGroup } from "@/components/ui/input-group";
 import { typeClass } from "@/lib/size-context";
 import { cn } from "@/lib/utils";
 import { api, AuthError } from "../api";
+import { t } from "@/lib/i18n";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -17,7 +18,7 @@ export function LoginPage() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!password) {
-      setError("Gib dein Passwort ein.");
+      setError(t("Enter your password."));
       return;
     }
     setBusy(true);
@@ -26,7 +27,7 @@ export function LoginPage() {
       await api.login(password);
       navigate(from && from.startsWith("/") && !from.startsWith("//") ? from : "/", { replace: true });
     } catch (err) {
-      setError(err instanceof AuthError ? "Das Passwort stimmt nicht." : err instanceof Error ? err.message : "Anmeldung fehlgeschlagen.");
+      setError(err instanceof AuthError ? t("That password is not correct.") : err instanceof Error ? err.message : t("Sign-in failed."));
     } finally {
       setBusy(false);
     }
@@ -40,12 +41,12 @@ export function LoginPage() {
       >
         <div className="flex flex-col items-center gap-3 text-center">
           <img src="/snd.png" alt="snd" className="h-11 w-auto" />
-          <p className={cn(typeClass("body", "compact"), "text-muted-foreground")}>Das Postfach für die Formulare deiner Websites.</p>
+          <p className={cn(typeClass("body", "compact"), "text-muted-foreground")}>{t("The inbox for your websites' forms.")}</p>
         </div>
         <InputGroup className="w-full max-w-none">
           <InputField
             index={0}
-            label="Passwort"
+            label={t("Password")}
             type="password"
             value={password}
             onChange={(next) => {
@@ -58,7 +59,7 @@ export function LoginPage() {
           />
         </InputGroup>
         <Button type="submit" variant="primary" loading={busy} disabled={busy} className="w-full">
-          Anmelden
+          {t("Sign in")}
         </Button>
       </form>
     </div>

@@ -1,6 +1,7 @@
+import { t, translateMessage, type Locale } from "@/lib/i18n";
 export class AuthError extends Error {
   constructor() {
-    super("Nicht angemeldet.");
+    super(t("Not signed in."));
     this.name = "AuthError";
   }
 }
@@ -28,7 +29,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(res.status, (data as { error?: string }).error ?? "Fehler");
+    throw new ApiError(res.status, translateMessage((data as { error?: string }).error ?? "Error"));
   }
   return data as T;
 }
@@ -64,11 +65,15 @@ export type Form = {
   smtp: SmtpView | null;
   turnstileSet: boolean;
   notifyPolicy: NotifyPolicy | null;
-  /** Eigene Titel pro Feldname, z. B. { message: "Nachricht" }. */
+  /** Custom titles per field name, e.g. { message: "Your message" }. */
   fieldLabels: Record<string, string>;
-  /** Feldnamen, die in Nachrichten schon vorkamen. */
+  /** Field names that already appeared in submissions. */
   seenFields: string[];
+  sentLabels: Record<string, string>;
+  /** Mail template of the website; null uses the built-in default. */
+  templateId: string | null;
   snippet: string;
+  scriptSnippet: string;
   submitUrl: string;
   submissionCount: number;
   failedCount: number;
@@ -128,7 +133,24 @@ export type Settings = {
   notifyPolicy: NotifyPolicy;
   retentionDays: number | null;
   mcpToken: string;
+  locale: Locale;
 };
+
+export type MailTemplate = {
+  id: string;
+  projectId: string;
+  name: string;
+  subject: string;
+  html: string;
+  text: string;
+  formCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type TemplateSource = { subject: string; html: string; text: string };
+
+export type TemplatePreview = TemplateSource & { warnings: string[]; sample: "submission" | "example" };
 
 export type SmtpInput = {
   host: string;
@@ -143,7 +165,7 @@ export const api = {
   login: (password: string) => request<{ ok: true }>("/api/login", { method: "POST", body: JSON.stringify({ password }) }),
   logout: () => request<{ ok: true }>("/api/logout", { method: "POST" }),
   settings: () => request<Settings>("/api/settings"),
-  updateSettings: (patch: Partial<{ adminSmtp: SmtpInput | null; notifyPolicy: NotifyPolicy; retentionDays: number | null }>) =>
+  updateSettings: (patch: Partial<{ adminSmtp: SmtpInput | null; notifyPolicy: NotifyPolicy; retentionDays: number | null; locale: Locale }>) =>
     request<Settings>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
   testAdminSmtp: (to: string) => request<{ ok: true }>("/api/settings/test-smtp", { method: "POST", body: JSON.stringify({ to }) }),
   rotateMcpToken: () => request<Settings>("/api/settings/rotate-mcp-token", { method: "POST" }),
@@ -171,6 +193,7 @@ export const api = {
       turnstileSecret?: string | null;
       notifyPolicy?: NotifyPolicy | null;
       fieldLabels?: Record<string, string> | null;
+      templateId?: string | null;
     },
   ) =>
     request<Form>(`/api/forms/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -193,6 +216,16 @@ export const api = {
   submission: (id: string) => request<Submission>(`/api/submissions/${id}`),
   deleteSubmission: (id: string) => request<void>(`/api/submissions/${id}`, { method: "DELETE" }),
   resendSubmission: (id: string) => request<Submission>(`/api/submissions/${id}/resend`, { method: "POST" }),
+  templates: (projectId: string) => request<MailTemplate[]>(`/api/projects/${projectId}/templates`),
+  template: (id: string) => request<MailTemplate>(`/api/templates/${id}`),
+  defaultTemplate: () => request<TemplateSource & { reference: string }>("/api/templates/default"),
+  createTemplate: (projectId: string, body: { name: string } & Partial<TemplateSource>) =>
+    request<MailTemplate & { warnings: string[] }>(`/api/projects/${projectId}/templates`, { method: "POST", body: JSON.stringify(body) }),
+  updateTemplate: (id: string, body: { name?: string } & Partial<TemplateSource>) =>
+    request<MailTemplate & { warnings: string[] }>(`/api/templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteTemplate: (id: string) => request<void>(`/api/templates/${id}`, { method: "DELETE" }),
+  previewTemplate: (body: { projectId?: string; templateId?: string; submissionId?: string } & Partial<TemplateSource>) =>
+    request<TemplatePreview>("/api/templates/preview", { method: "POST", body: JSON.stringify(body) }),
   formCsvUrl: (id: string) => `/api/forms/${id}/export.csv`,
   projectCsvUrl: (id: string) => `/api/projects/${id}/export.csv`,
 };

@@ -9,11 +9,12 @@ import { CreateWebsiteDialog } from "../components/CreateDialogs";
 import { SiteIcon, StatusPill } from "../components/kit";
 import { PageHeader } from "../components/PageHeader";
 import { ColumnChart, FilterRow, RangeTabs, StatTiles, useRange, useStats } from "../components/Stats";
-import { hostOf } from "../lib/format";
+import { hostOf, intlLocale } from "../lib/format";
 import { formWarning, websiteChecks } from "../lib/readiness";
 import { useProjects } from "../projects-context";
+import { t } from "@/lib/i18n";
 
-const number = new Intl.NumberFormat("de-DE");
+const number = { format: (value: number) => new Intl.NumberFormat(intlLocale()).format(value) };
 
 export function DashboardPage() {
   const { projects, loaded, formsFor } = useProjects();
@@ -35,7 +36,7 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageHeader title="Übersicht" />
+      <PageHeader title={t("Overview")} />
       <Attention />
       <FilterRow>
         <RangeTabs days={range.days} onChange={range.setDays} />
@@ -43,10 +44,10 @@ export function DashboardPage() {
       {data ? (
         <div className={cn("flex flex-col gap-3 transition-opacity", loading && "opacity-60")}>
           <StatTiles stats={data} days={range.days} />
-          <ColumnChart stats={data} title="Nachrichten über alle Websites" loading={loading} />
+          <ColumnChart stats={data} title={t("Messages across all websites")} loading={loading} />
           <section className="mt-3 flex flex-col gap-2">
             <h2 className={cn(typeClass("body", "compact"), "px-1 text-foreground")} style={{ fontVariationSettings: fontWeights.semibold }}>
-              Websites
+              {t("Websites")}
             </h2>
             <ul className="group-surface divide-hairline overflow-hidden">
               {[...projects]
@@ -99,14 +100,14 @@ function WebsiteRow({
           {project.label}
         </span>
         <span className={cn(typeClass("caption", "compact"), "block truncate text-muted-foreground")}>
-          {project.origins.length ? [...new Set(project.origins.map((o) => hostOf(o).replace(/^www\./, "")))].join(" · ") : "keine Adresse"}
+          {project.origins.length ? [...new Set(project.origins.map((o) => hostOf(o).replace(/^www\./, "")))].join(" · ") : t("no address")}
         </span>
       </span>
       <span className="hidden h-2 overflow-hidden rounded-full sm:block" aria-hidden>
         <span className="block h-full origin-left rounded-full bg-[var(--chart-bar)]" style={{ transform: `scaleX(${share})` }} />
       </span>
       <span className="flex items-center gap-3">
-        {ready ? null : <StatusPill tone="warn">Einrichtung offen</StatusPill>}
+        {ready ? null : <StatusPill tone="warn">{t("Setup incomplete")}</StatusPill>}
         <span className={cn(typeClass("body", "compact"), "w-10 text-right tabular-nums text-foreground")}>{number.format(total)}</span>
         <ChevronRight className="size-4 text-muted-foreground" />
       </span>
@@ -127,10 +128,10 @@ function Attention() {
       items.push({
         key: project.id,
         project,
-        title: `${project.label} ist noch nicht fertig eingerichtet`,
+        title: t("{name} isn't fully set up yet", { name: project.label }),
         detail: open.map((check) => check.title).join(" · "),
         to: `/projects/${project.id}`,
-        action: "Einrichten",
+        action: t("Set up"),
       });
       continue;
     }
@@ -143,7 +144,7 @@ function Attention() {
           title: `${form.name} · ${project.label}`,
           detail: warning,
           to: `/forms/${form.id}`,
-          action: "Ansehen",
+          action: t("View"),
         });
       }
     }
@@ -152,7 +153,7 @@ function Attention() {
   return (
     <section className="mb-6 flex flex-col gap-2">
       <h2 className={cn(typeClass("body", "compact"), "px-1 text-foreground")} style={{ fontVariationSettings: fontWeights.semibold }}>
-        Braucht deine Aufmerksamkeit
+        {t("Needs your attention")}
       </h2>
       <ul className="group-surface divide-hairline overflow-hidden">
         {items.map((item) => (
@@ -174,17 +175,17 @@ function Attention() {
 
 function Welcome({ onStart }: { onStart: () => void }) {
   const steps = [
-    { icon: <Globe />, title: "Website hinzufügen" },
-    { icon: <Mail />, title: "Postfach verbinden" },
-    { icon: <Code2 />, title: "Formular-Code einfügen" },
+    { icon: <Globe />, title: t("Add a website") },
+    { icon: <Mail />, title: t("Connect a mailbox") },
+    { icon: <Code2 />, title: t("Paste the form code") },
   ];
   return (
     <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center py-10">
       <h1 className={cn(typeClass("display", "compact"), "text-foreground")} style={{ fontVariationSettings: fontWeights.bold }}>
-        Formulare für deine Websites
+        {t("Forms for your websites")}
       </h1>
       <p className={cn(typeClass("subtitle", "compact"), "mt-2 text-muted-foreground")}>
-        Jede Nachricht aus einem Kontaktformular landet per E-Mail im richtigen Postfach.
+        {t("Every message from a contact form lands in the right inbox by email.")}
       </p>
       <ol className="mt-8 flex flex-col gap-2">
         {steps.map((step, index) => (
@@ -199,7 +200,7 @@ function Welcome({ onStart }: { onStart: () => void }) {
       </ol>
       <div className="mt-8">
         <Button variant="primary" leadingIcon={Plus} onClick={onStart}>
-          Los geht’s
+          {t("Get started")}
         </Button>
       </div>
     </div>

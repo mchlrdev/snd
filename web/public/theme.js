@@ -1,4 +1,4 @@
-// Läuft vor dem ersten Rendern, damit die Seite nicht hell aufblitzt.
+// Runs before the first render so the page does not flash light.
 (function () {
   try {
     var pref = localStorage.getItem("snd:theme") || "system";

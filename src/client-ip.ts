@@ -2,9 +2,9 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import type { Context } from "hono";
 
 /**
- * IP des Absenders für Rate-Limits. Hinter einem Proxy zählt der Eintrag, den
- * der nächste Proxy angehängt hat (der letzte in X-Forwarded-For); alles davor
- * kann der Client frei setzen. Ohne Proxy gilt die Socket-Adresse.
+ * Sender IP for rate limits. Behind a proxy, the entry appended by the nearest
+ * proxy counts (the last one in X-Forwarded-For); the client can set anything
+ * before it. Without a proxy, the socket address is used.
  */
 export function clientIp(c: Context, trustProxy: boolean): string {
   if (trustProxy) {

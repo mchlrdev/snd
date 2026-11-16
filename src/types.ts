@@ -1,3 +1,5 @@
+import type { Locale } from "./i18n.js";
+
 export type NotifyPolicy = "immediate" | "abandoned" | "off";
 
 export type MailStatus = "queued" | "sent" | "failed" | "abandoned";
@@ -39,6 +41,7 @@ export type SettingsRecord = {
   notifyPolicy: NotifyPolicy;
   retentionDays: number | null;
   mcpTokenEnc: string | null;
+  locale: Locale;
 };
 
 export type SettingsView = {
@@ -46,6 +49,7 @@ export type SettingsView = {
   notifyPolicy: NotifyPolicy;
   retentionDays: number | null;
   mcpToken: string;
+  locale: Locale;
 };
 
 export type ProjectRecord = {
@@ -65,7 +69,7 @@ export type ProjectView = {
   notifyPolicy: NotifyPolicy | null;
   formCount: number;
   submissionCount: number;
-  /** Endgültig nicht zugestellte Nachrichten, die noch nicht quittiert sind. */
+  /** Submissions that finally failed to deliver and are not acknowledged yet. */
   failedCount: number;
   createdAt: number;
 };
@@ -79,8 +83,10 @@ export type FormRecord = {
   smtp: SmtpRecord | null;
   turnstileSecretEnc: string | null;
   notifyPolicy: NotifyPolicy | null;
-  /** Eigene Titel pro Feldname für Mail und Konsole, z. B. { message: "Nachricht" }. */
+  /** Custom titles per field name for mail and console, e.g. { message: "Your message" }. */
   fieldLabels: Record<string, string>;
+  /** Mail template of the form's project; null uses the built-in default. */
+  templateId: string | null;
   createdAt: number;
 };
 
@@ -94,9 +100,15 @@ export type FormView = {
   turnstileSet: boolean;
   notifyPolicy: NotifyPolicy | null;
   fieldLabels: Record<string, string>;
-  /** Feldnamen, die in Nachrichten dieses Forms schon vorkamen. */
+  templateId: string | null;
+  /** Field names that already appeared in this form's submissions. */
   seenFields: string[];
+  /** Titles the website sent with its latest submissions (`label:<field>`). */
+  sentLabels: Record<string, string>;
+  /** Plain HTML form; needs a thank-you page in `redirect`. */
   snippet: string;
+  /** Recommended: form plus script that sends with fetch and field titles. */
+  scriptSnippet: string;
   submitUrl: string;
   submissionCount: number;
   failedCount: number;
@@ -108,6 +120,8 @@ export type SubmissionRecord = {
   formId: string;
   projectId: string;
   fields: Record<string, string>;
+  /** Field titles the website sent along (`label:<field>`). */
+  fieldLabels: Record<string, string>;
   replyTo: string | null;
   subject: string | null;
   createdAt: number;
@@ -124,6 +138,7 @@ export type SubmissionView = {
   projectId: string;
   projectLabel: string;
   fields: Record<string, string>;
+  fieldLabels: Record<string, string>;
   replyTo: string | null;
   subject: string | null;
   createdAt: number;
@@ -136,16 +151,16 @@ export type SubmissionView = {
 export type SubmissionFilter = {
   formId?: string;
   projectId?: string;
-  /** Zeitraum in ms seit Epoch, `until` exklusiv. */
+  /** Time range in ms since epoch, `until` exclusive. */
   since?: number;
   until?: number;
   /** "delivered" = sent, "pending" = queued/failed, "failed" = abandoned. */
   status?: DeliveryFilter;
-  /** Nur endgültig gescheiterte Zustellungen, die noch nicht quittiert sind. */
+  /** Only finally failed deliveries that are not acknowledged yet. */
   unacknowledged?: boolean;
-  /** Volltextsuche in allen Feldwerten. */
+  /** Full-text search across all field values. */
   query?: string;
-  /** Nur Nachrichten, deren Feld `field` genau `value` enthält. */
+  /** Only submissions whose field `field` equals `value` exactly. */
   field?: string;
   value?: string;
 };
@@ -156,10 +171,28 @@ export type MailJob = SubmissionRecord & {
   formName: string;
   fieldLabels: Record<string, string>;
   projectLabel: string;
+  template: { subject: string; html: string; text: string } | null;
+  locale: Locale;
   recipients: string[];
   formSmtp: SmtpRecord | null;
   projectSmtp: SmtpRecord | null;
   formNotifyPolicy: NotifyPolicy | null;
   projectNotifyPolicy: NotifyPolicy | null;
   globalNotifyPolicy: NotifyPolicy;
+};
+
+export type TemplateRecord = {
+  id: string;
+  projectId: string;
+  name: string;
+  subject: string;
+  html: string;
+  text: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type TemplateView = TemplateRecord & {
+  /** Forms that send with this template. */
+  formCount: number;
 };

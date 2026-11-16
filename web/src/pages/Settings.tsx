@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Bot, Clock, Mail } from "lucide-react";
+import { Bell, Bot, Clock, Languages, Mail } from "lucide-react";
 import { InputField, InputGroup } from "@/components/ui/input-group";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioItem } from "@/components/ui/radio-group";
 import { api, type NotifyPolicy } from "../api";
+import type { Locale } from "@/lib/i18n";
 import { Section, StatusPill } from "../components/kit";
 import { McpSetup } from "../components/McpSetup";
 import { PageHeader, PageTabs, usePageTab, type PageTab } from "../components/PageHeader";
@@ -11,11 +12,13 @@ import { SaveFooter, useSave } from "../components/SaveFooter";
 import { NotifyChoice } from "../components/SettingsWidgets";
 import { emptySmtp, SmtpFields, smtpFromDraft, smtpProblem, SmtpTest, smtpChanged, type SmtpDraft } from "../components/SmtpFields";
 import { useProjects } from "../projects-context";
+import { t } from "@/lib/i18n";
 
 const TABS: PageTab[] = [
-  { key: "warnungen", label: "Warnungen", icon: Bell },
-  { key: "aufbewahrung", label: "Aufbewahrung", icon: Clock },
-  { key: "agenten", label: "KI-Agenten", icon: Bot },
+  { key: "general", label: "General", icon: Languages },
+  { key: "alerts", label: "Alerts", icon: Bell },
+  { key: "retention", label: "Retention", icon: Clock },
+  { key: "agents", label: "AI agents", icon: Bot },
 ];
 
 export function SettingsPage() {
@@ -24,10 +27,11 @@ export function SettingsPage() {
   if (!settings) return null;
   return (
     <>
-      <PageHeader title="Einstellungen" tabs={<PageTabs tabs={TABS} index={tab.index} onSelect={tab.select} />} />
-      {tab.key === "warnungen" ? <Warnings onSaved={reload} /> : null}
-      {tab.key === "aufbewahrung" ? <Retention onSaved={reload} /> : null}
-      {tab.key === "agenten" ? (
+      <PageHeader title={t("Settings")} tabs={<PageTabs tabs={TABS} index={tab.index} onSelect={tab.select} />} />
+      {tab.key === "general" ? <General onSaved={reload} /> : null}
+      {tab.key === "alerts" ? <Warnings onSaved={reload} /> : null}
+      {tab.key === "retention" ? <Retention onSaved={reload} /> : null}
+      {tab.key === "agents" ? (
         <McpSetup
           token={settings.mcpToken}
           origin={window.location.origin}
@@ -38,6 +42,46 @@ export function SettingsPage() {
         />
       ) : null}
     </>
+  );
+}
+
+const LANGUAGES: { value: Locale; label: string }[] = [
+  { value: "en", label: "English" },
+  { value: "de", label: "Deutsch" },
+];
+
+/** One language for the console, the default mail template and the answers
+ *  visitors get from the form. Language names stay in their own language. */
+function General({ onSaved }: { onSaved: () => Promise<void> }) {
+  const { settings } = useProjects();
+  const [locale, setLocaleDraft] = useState<Locale>(settings?.locale ?? "en");
+  const save = useSave();
+  return (
+    <div className="flex max-w-3xl flex-col gap-6">
+      <Section
+        icon={<Languages />}
+        title={t("Language")}
+        description={t("Used for this console, the default notification mail and the messages visitors see after submitting.")}
+        footer={
+          <SaveFooter
+            state={save.state}
+            dirty={locale !== settings?.locale}
+            onSave={() =>
+              void save.run(async () => {
+                await api.updateSettings({ locale });
+                await onSaved();
+              })
+            }
+          />
+        }
+      >
+        <RadioGroup value={locale} onValueChange={(next) => setLocaleDraft(next as Locale)} className="max-w-md">
+          {LANGUAGES.map((language, index) => (
+            <RadioItem key={language.value} index={index} value={language.value} label={language.label} />
+          ))}
+        </RadioGroup>
+      </Section>
+    </div>
   );
 }
 
@@ -57,7 +101,7 @@ function Warnings({ onSaved }: { onSaved: () => Promise<void> }) {
     <div className="flex max-w-3xl flex-col gap-6">
       <Section
         icon={<Bell />}
-        title="Warnen, wenn eine Nachricht nicht ankommt"
+        title={t("Alert me when a message isn't delivered")}
         footer={
           <SaveFooter
             state={policy.state}
@@ -74,7 +118,7 @@ function Warnings({ onSaved }: { onSaved: () => Promise<void> }) {
 
       <Section
         icon={<Mail />}
-        title="Postfach für Warnungen"
+        title={t("Mailbox for alerts")}
 
         footer={
           <SaveFooter
@@ -99,7 +143,7 @@ function Warnings({ onSaved }: { onSaved: () => Promise<void> }) {
                     await onSaved();
                   })}
                 >
-                  Trennen
+                  {t("Disconnect")}
                 </Button>
               ) : null
             }
@@ -107,9 +151,9 @@ function Warnings({ onSaved }: { onSaved: () => Promise<void> }) {
         }
       >
         {admin ? (
-          <StatusPill tone="ok" className="self-start">Warnungen gehen an {admin.from}</StatusPill>
+          <StatusPill tone="ok" className="self-start">{t("Alerts go to {address}", { address: admin.from })}</StatusPill>
         ) : notify !== "off" ? (
-          <StatusPill tone="warn" className="self-start">Ohne Postfach bekommst du keine Warnungen</StatusPill>
+          <StatusPill tone="warn" className="self-start">{t("Without a mailbox you won't get alerts")}</StatusPill>
         ) : null}
         <SmtpFields value={smtp} onChange={setSmtp} passwordSet={Boolean(admin?.passwordSet)} />
         <SmtpTest disabled={!admin || dirty} defaultTo={admin?.from} onTest={(to) => api.testAdminSmtp(to)} />
@@ -131,13 +175,13 @@ function Retention({ onSaved }: { onSaved: () => Promise<void> }) {
     <div className="flex max-w-3xl flex-col gap-6">
       <Section
         icon={<Clock />}
-        title="Gespeicherte Nachrichten"
+        title={t("Stored messages")}
         footer={
           <SaveFooter
             state={save.state}
             dirty={value !== initial}
             onSave={() => {
-              if (invalid) return save.fail("Gib eine ganze Zahl von Tagen an, z. B. 90.");
+              if (invalid) return save.fail(t("Enter a whole number of days, e.g. 90."));
               void save.run(async () => {
                 await api.updateSettings({ retentionDays: value ? Number(value) : null });
                 await onSaved();
@@ -151,12 +195,12 @@ function Retention({ onSaved }: { onSaved: () => Promise<void> }) {
           <InputGroup className="w-full max-w-xs">
             <InputField
               index={0}
-              label="Löschen nach (Tagen)"
+              label={t("Delete after (days)")}
               value={days}
               onChange={setDays}
               placeholder="90"
               inputMode="numeric"
-              error={invalid && days ? "Nur ganze Tage" : undefined}
+              error={invalid && days ? t("Whole days only") : undefined}
             />
           </InputGroup>
         ) : null}
@@ -169,8 +213,8 @@ function Retention({ onSaved }: { onSaved: () => Promise<void> }) {
 function RetentionChoice({ limited, onChange }: { limited: boolean; onChange: (next: boolean) => void }) {
   return (
     <RadioGroup value={limited ? "limited" : "forever"} onValueChange={(next) => onChange(next === "limited")} className="max-w-md">
-      <RadioItem index={0} value="forever" label="Behalten, bis ich sie lösche" />
-      <RadioItem index={1} value="limited" label="Automatisch löschen nach einigen Tagen" />
+      <RadioItem index={0} value="forever" label={t("Keep until I delete them")} />
+      <RadioItem index={1} value="limited" label={t("Delete automatically after some days")} />
     </RadioGroup>
   );
 }

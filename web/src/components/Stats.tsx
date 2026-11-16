@@ -6,19 +6,20 @@ import { fontWeights } from "@/lib/font-weight";
 import { typeClass } from "@/lib/size-context";
 import { cn } from "@/lib/utils";
 import { api, type DeliveryFilter, type Stats, type StatsBucket, type StatsQuery } from "../api";
-import { errorText } from "../lib/format";
+import { errorText, intlLocale } from "../lib/format";
+import { t } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
-// Auswertung: one filter row scopes everything below it (tiles, chart, field
+// Stats: one filter row scopes everything below it (tiles, chart, field
 // breakdown), so the numbers always agree. While a new slice loads, the
 // previous render stays at reduced opacity — no skeleton flash, no jump.
 // ---------------------------------------------------------------------------
 
 export const RANGES = [
-  { days: 7, label: "7 Tage" },
-  { days: 30, label: "30 Tage" },
-  { days: 90, label: "90 Tage" },
-  { days: 365, label: "12 Monate" },
+  { days: 7, label: "7 days" },
+  { days: 30, label: "30 days" },
+  { days: 90, label: "90 days" },
+  { days: 365, label: "12 months" },
 ] as const;
 
 const RANGE_KEY = "snd:range";
@@ -39,7 +40,7 @@ export function useRange() {
       try {
         localStorage.setItem(RANGE_KEY, String(next));
       } catch {
-        // nur Komfort
+        // convenience only
       }
     },
   };
@@ -60,7 +61,7 @@ export function useStats(query: StatsQuery) {
         setData(next);
         setError(null);
       })
-      .catch((err: unknown) => !cancelled && setError(errorText(err, "Auswertung konnte nicht geladen werden.")))
+      .catch((err: unknown) => !cancelled && setError(errorText(err, t("Stats could not be loaded."))))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -74,27 +75,27 @@ export function RangeTabs({ days, onChange }: { days: number; onChange: (days: n
   return (
     <Tabs selectedIndex={index} onSelect={(i) => onChange(RANGES[i]!.days)} size="compact" className="w-max">
       {RANGES.map((range, i) => (
-        <TabsItem key={range.days} index={i} label={range.label} />
+        <TabsItem key={range.days} index={i} label={t(range.label)} />
       ))}
     </Tabs>
   );
 }
 
 const STATUS_OPTIONS: { value: DeliveryFilter | "all"; label: string }[] = [
-  { value: "all", label: "Alle Nachrichten" },
-  { value: "delivered", label: "Per E-Mail angekommen" },
-  { value: "failed", label: "Nicht angekommen" },
-  { value: "pending", label: "Wird noch zugestellt" },
+  { value: "all", label: "All messages" },
+  { value: "delivered", label: "Delivered by email" },
+  { value: "failed", label: "Not delivered" },
+  { value: "pending", label: "Still being delivered" },
 ];
 
 export function StatusSelect({ value, onChange }: { value: DeliveryFilter | undefined; onChange: (next: DeliveryFilter | undefined) => void }) {
   return (
     <Select value={value ?? "all"} onValueChange={(next) => onChange(next === "all" ? undefined : (next as DeliveryFilter))}>
-      <SelectTrigger placeholder="Alle Nachrichten" className="h-7 w-auto min-w-44" />
+      <SelectTrigger placeholder={t("All messages")} className="h-7 w-auto min-w-44" />
       <SelectContent>
         {STATUS_OPTIONS.map((option, index) => (
           <SelectItem key={option.value} index={index} value={option.value}>
-            {option.label}
+            {t(option.label)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -118,7 +119,7 @@ export function FilterChip({ label, onClear }: { label: string; onClear: () => v
       <button
         type="button"
         onClick={onClear}
-        aria-label={`Filter ${label} entfernen`}
+        aria-label={t("Remove filter {name}", { name: label })}
         className="flex size-5 items-center justify-center rounded-full hover:bg-background/20"
       >
         <X className="size-3" />
@@ -131,7 +132,7 @@ export function FilterChip({ label, onClear }: { label: string; onClear: () => v
 // Figures
 // ---------------------------------------------------------------------------
 
-const number = new Intl.NumberFormat("de-DE");
+const number = { format: (value: number) => new Intl.NumberFormat(intlLocale()).format(value) };
 
 function Tile({ label, value, children }: { label: string; value: string; children?: ReactNode }) {
   return (
@@ -151,27 +152,27 @@ export function StatTiles({ stats, days }: { stats: Stats; days: number }) {
   const perDay = total / Math.max(1, days);
   const finished = delivered + failed;
   const rate = finished ? Math.round((delivered / finished) * 100) : null;
-  const rangeLabel = RANGES.find((r) => r.days === days)?.label ?? `${days} Tage`;
+  const rangeLabel = t(RANGES.find((r) => r.days === days)?.label ?? "{n} days", { n: days });
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-      <Tile label={`Nachrichten · ${rangeLabel}`} value={number.format(total)}>
+      <Tile label={t("Messages · {range}", { range: rangeLabel })} value={number.format(total)}>
         {delta === 0 ? (
-          "gleich viele wie davor"
+          t("same as before")
         ) : (
           <span className="inline-flex items-center gap-0.5">
             {delta > 0 ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
-            {number.format(Math.abs(delta))} {delta > 0 ? "mehr" : "weniger"} als davor
+            {t(delta > 0 ? "{n} more than before" : "{n} fewer than before", { n: number.format(Math.abs(delta)) })}
           </span>
         )}
       </Tile>
-      <Tile label="Pro Tag" value={perDay < 10 ? perDay.toLocaleString("de-DE", { maximumFractionDigits: 1 }) : number.format(Math.round(perDay))}>
-        im Durchschnitt
+      <Tile label={t("Per day")} value={perDay < 10 ? perDay.toLocaleString(intlLocale(), { maximumFractionDigits: 1 }) : number.format(Math.round(perDay))}>
+        {t("on average")}
       </Tile>
-      <Tile label="Angekommen" value={rate == null ? "–" : `${rate} %`}>
-        {rate == null ? "noch nichts zugestellt" : `${number.format(delivered)} per E-Mail`}
+      <Tile label={t("Delivered")} value={rate == null ? "–" : `${rate} %`}>
+        {rate == null ? t("nothing delivered yet") : t("{n} by email", { n: number.format(delivered) })}
       </Tile>
-      <Tile label="Nicht angekommen" value={number.format(failed)}>
-        {failed ? "trotzdem gespeichert" : "alles zugestellt"}
+      <Tile label={t("Not delivered")} value={number.format(failed)}>
+        {failed ? t("stored anyway") : t("all delivered")}
       </Tile>
     </div>
   );
@@ -182,7 +183,7 @@ export function StatTiles({ stats, days }: { stats: Stats; days: number }) {
 // title names it. Bars ≤ 24px, 4px rounded tops, square at the baseline.
 // ---------------------------------------------------------------------------
 
-const monthShort = new Intl.DateTimeFormat("de-DE", { month: "short" });
+const monthShort = { format: (date: Date) => new Intl.DateTimeFormat(intlLocale(), { month: "short" }).format(date) };
 
 function parseKey(key: string): Date {
   const [y, m, d] = key.split("-").map(Number) as [number, number, number?];
@@ -191,10 +192,10 @@ function parseKey(key: string): Date {
 
 export function bucketLabel(key: string, bucket: StatsBucket, long = false): string {
   const date = parseKey(key);
-  if (bucket === "month") return long ? new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" }).format(date) : `${monthShort.format(date)}`;
-  const day = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "short" }).format(date);
-  if (bucket === "week") return long ? `Woche ab ${day}` : day;
-  return long ? new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" }).format(date) : day;
+  if (bucket === "month") return long ? new Intl.DateTimeFormat(intlLocale(), { month: "long", year: "numeric" }).format(date) : `${monthShort.format(date)}`;
+  const day = new Intl.DateTimeFormat(intlLocale(), { day: "numeric", month: "short" }).format(date);
+  if (bucket === "week") return long ? t("Week of {day}", { day }) : day;
+  return long ? new Intl.DateTimeFormat(intlLocale(), { weekday: "long", day: "numeric", month: "long" }).format(date) : day;
 }
 
 /** Top of the axis: four equal, whole-number steps (counts have no halves). */
@@ -209,7 +210,7 @@ function niceMax(value: number): number {
 }
 
 function compact(value: number): string {
-  return value >= 10_000 ? new Intl.NumberFormat("de-DE", { notation: "compact" }).format(value) : number.format(value);
+  return value >= 10_000 ? new Intl.NumberFormat(intlLocale(), { notation: "compact" }).format(value) : number.format(value);
 }
 
 export function ColumnChart({
@@ -259,6 +260,9 @@ export function ColumnChart({
   };
 
   const point = active != null ? series[active] : null;
+  // The table lists only periods with messages; the chart keeps the empty
+  // ones so the time axis stays even.
+  const rows = useMemo(() => series.filter((p) => p.total > 0 || p.failed > 0).reverse(), [series]);
   const tipLeft = active != null ? pad.left + slot * active + slot / 2 : 0;
 
   return (
@@ -268,8 +272,8 @@ export function ColumnChart({
           {title}
         </h2>
         <Tabs selectedIndex={view === "chart" ? 0 : 1} onSelect={(i) => setView(i === 0 ? "chart" : "table")} size="compact" activeLabel>
-          <TabsItem index={0} label="Diagramm" icon={BarChart3} />
-          <TabsItem index={1} label="Tabelle" icon={Table2} />
+          <TabsItem index={0} label={t("Chart")} icon={BarChart3} />
+          <TabsItem index={1} label={t("Table")} icon={Table2} />
         </Tabs>
       </header>
       <div className={cn("transition-opacity duration-150", loading && "opacity-50")}>
@@ -344,13 +348,13 @@ export function ColumnChart({
                 style={{ left: Math.min(Math.max(tipLeft, 70), width - 70) }}
               >
                 <div className={cn(typeClass("body", "compact"), "text-foreground tabular-nums")} style={{ fontVariationSettings: fontWeights.semibold }}>
-                  {number.format(point.total)} {point.total === 1 ? "Nachricht" : "Nachrichten"}
+                  {t(point.total === 1 ? "{n} message" : "{n} messages", { n: number.format(point.total) })}
                 </div>
                 <div className={cn(typeClass("caption", "compact"), "text-muted-foreground")}>{bucketLabel(point.key, stats.bucket, true)}</div>
                 {point.failed ? (
                   <div className={cn(typeClass("caption", "compact"), "mt-0.5 flex items-center gap-1.5 text-muted-foreground")}>
                     <span className="h-0.5 w-2.5 rounded-full bg-[var(--chart-critical)]" />
-                    {point.failed} nicht angekommen
+                    {t("{n} not delivered", { n: point.failed })}
                   </div>
                 ) : null}
               </div>
@@ -361,13 +365,20 @@ export function ColumnChart({
             <table className={cn(typeClass("body", "compact"), "w-full")}>
               <thead>
                 <tr className="text-left text-muted-foreground">
-                  <th className={cn(typeClass("caption", "compact"), "py-1.5 font-normal")}>Zeitraum</th>
-                  <th className={cn(typeClass("caption", "compact"), "py-1.5 text-right font-normal")}>Nachrichten</th>
-                  <th className={cn(typeClass("caption", "compact"), "py-1.5 text-right font-normal")}>Nicht angekommen</th>
+                  <th className={cn(typeClass("caption", "compact"), "py-1.5 font-normal")}>{t("Period")}</th>
+                  <th className={cn(typeClass("caption", "compact"), "py-1.5 text-right font-normal")}>{t("Messages")}</th>
+                  <th className={cn(typeClass("caption", "compact"), "py-1.5 text-right font-normal")}>{t("Not delivered")}</th>
                 </tr>
               </thead>
               <tbody className="divide-hairline">
-                {[...series].reverse().map((p) => (
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="py-3 text-center text-muted-foreground">
+                      {t("No messages in this period")}
+                    </td>
+                  </tr>
+                ) : null}
+                {rows.map((p) => (
                   <tr key={p.key}>
                     <td className="py-1.5 text-foreground">{bucketLabel(p.key, stats.bucket, true)}</td>
                     <td className="py-1.5 text-right tabular-nums text-foreground">{number.format(p.total)}</td>
@@ -384,7 +395,7 @@ export function ColumnChart({
 }
 
 // ---------------------------------------------------------------------------
-// Breakdown of choice fields ("Betreff: Bestellung / Frage / …"). A value is
+// Breakdown of choice fields ("Subject: Order / Question / …"). A value is
 // a button: clicking it filters everything above to that value.
 // ---------------------------------------------------------------------------
 
@@ -446,23 +457,27 @@ export function FieldBreakdown({
 
 const FIELD_LABELS: Record<string, string> = {
   name: "Name",
-  vorname: "Vorname",
-  nachname: "Nachname",
-  email: "E-Mail",
-  "e-mail": "E-Mail",
-  phone: "Telefon",
-  telefon: "Telefon",
-  tel: "Telefon",
-  message: "Nachricht",
-  nachricht: "Nachricht",
-  subject: "Betreff",
-  betreff: "Betreff",
-  thema: "Thema",
-  topic: "Thema",
-  company: "Firma",
-  firma: "Firma",
-  replyto: "Antwortadresse",
-  reply_to: "Antwortadresse",
+  vorname: "First name",
+  nachname: "Last name",
+  firstname: "First name",
+  first_name: "First name",
+  lastname: "Last name",
+  last_name: "Last name",
+  email: "Email",
+  "e-mail": "Email",
+  phone: "Phone",
+  telefon: "Phone",
+  tel: "Phone",
+  message: "Message",
+  nachricht: "Message",
+  subject: "Subject",
+  betreff: "Subject",
+  thema: "Topic",
+  topic: "Topic",
+  company: "Company",
+  firma: "Company",
+  replyto: "Reply address",
+  reply_to: "Reply address",
 };
 
 /** Field names come from the website's HTML ("message", "tel_mobil"); show
@@ -471,7 +486,7 @@ export function fieldLabel(name: string, labels?: Record<string, string>): strin
   const own = labels?.[name]?.trim();
   if (own) return own;
   const known = FIELD_LABELS[name.toLowerCase()];
-  if (known) return known;
+  if (known) return t(known);
   const spaced = name.replace(/[_-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }

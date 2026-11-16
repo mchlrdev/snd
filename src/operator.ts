@@ -5,7 +5,7 @@ import { AppError } from "./errors.js";
 import { newAccessKey, newMcpToken } from "./ids.js";
 import { sendTestMail, type Mailer } from "./mail.js";
 import { normalizeOrigins } from "./origin.js";
-import { formSnippet } from "./snippet.js";
+import { formSnippet, scriptSnippet } from "./snippet.js";
 import { isEmail } from "./submit.js";
 import type { Store } from "./store.js";
 import type {
@@ -22,6 +22,18 @@ import type {
 } from "./types.js";
 import { computeStats, resolveRange, safeTimeZone, type Stats, type StatsRequest } from "./stats.js";
 import { fetchFavicon } from "./favicon.js";
+import { asLocale, LOCALES, type Locale } from "./i18n.js";
+import {
+  compileTemplate,
+  defaultTemplate,
+  renderCompiled,
+  templateData,
+  TEMPLATE_REFERENCE,
+  unknownVariables,
+  type NotificationInput,
+  type TemplateSource,
+} from "./notification.js";
+import type { TemplateRecord, TemplateView } from "./types.js";
 
 export type Operator = ReturnType<typeof createOperator>;
 
@@ -41,7 +53,7 @@ function mergeSmtp(current: SmtpRecord | null, patch: SmtpPatch | SmtpInput | nu
   if (patch === null) return null;
   const password = "password" in patch && patch.password ? patch.password : null;
   if (!current && !password) {
-    throw new AppError(400, "SMTP-Passwort fehlt.");
+    throw new AppError(400, "SMTP password is missing.");
   }
   return {
     host: patch.host,
@@ -53,11 +65,11 @@ function mergeSmtp(current: SmtpRecord | null, patch: SmtpPatch | SmtpInput | nu
 }
 
 function validateRecipients(recipients: string[]): string[] {
-  if (recipients.length === 0) throw new AppError(400, "Mindestens ein Empfänger ist nötig.");
+  if (recipients.length === 0) throw new AppError(400, "At least one recipient is required.");
   const out: string[] = [];
   for (const raw of recipients) {
     const email = raw.trim();
-    if (!isEmail(email)) throw new AppError(400, `Ungültige Empfängeradresse: ${raw}`);
+    if (!isEmail(email)) throw new AppError(400, `Invalid recipient address: ${raw}`);
     if (!out.includes(email)) out.push(email);
   }
   return out;
@@ -66,29 +78,46 @@ function validateRecipients(recipients: string[]): string[] {
 const MAX_LABELS = 50;
 const MAX_LABEL_LENGTH = 200;
 
-/** Leere Titel fallen weg; Feldnamen und Titel werden getrimmt. */
+/** Empty titles are dropped; field names and titles are trimmed. */
 function validateFieldLabels(input: unknown): Record<string, string> {
   if (input == null) return {};
-  if (typeof input !== "object" || Array.isArray(input)) throw new AppError(400, "Feldtitel müssen ein Objekt sein.");
+  if (typeof input !== "object" || Array.isArray(input)) throw new AppError(400, "Field titles must be an object.");
   const out: Record<string, string> = {};
   for (const [rawKey, rawValue] of Object.entries(input)) {
-    if (typeof rawValue !== "string") throw new AppError(400, `Feldtitel für ${rawKey} muss Text sein.`);
+    if (typeof rawValue !== "string") throw new AppError(400, `The field title for ${rawKey} must be text.`);
     const key = rawKey.trim();
     const value = rawValue.trim();
     if (!key || !value) continue;
     if (key.length > MAX_LABEL_LENGTH || value.length > MAX_LABEL_LENGTH) {
-      throw new AppError(400, `Feldtitel dürfen höchstens ${MAX_LABEL_LENGTH} Zeichen haben.`);
+      throw new AppError(400, `Field titles may have at most ${MAX_LABEL_LENGTH} characters.`);
     }
     out[key] = value;
   }
-  if (Object.keys(out).length > MAX_LABELS) throw new AppError(400, `Höchstens ${MAX_LABELS} Feldtitel.`);
+  if (Object.keys(out).length > MAX_LABELS) throw new AppError(400, `At most ${MAX_LABELS} field titles.`);
   return out;
 }
+
+const MAX_TEMPLATES_PER_PROJECT = 50;
+const MAX_TEMPLATE_NAME = 100;
+const MAX_SUBJECT_SOURCE = 1000;
+const MAX_HTML_SOURCE = 200 * 1024;
+const MAX_TEXT_SOURCE = 100 * 1024;
+
+function checkTemplateSizes(source: TemplateSource): void {
+  if (source.subject.length > MAX_SUBJECT_SOURCE) throw new AppError(400, `The subject template may have at most ${MAX_SUBJECT_SOURCE} characters.`);
+  if (source.html.length > MAX_HTML_SOURCE) throw new AppError(400, "The HTML template may be at most 200 KB.");
+  if (source.text.length > MAX_TEXT_SOURCE) throw new AppError(400, "The text template may be at most 100 KB.");
+}
+
+const SAMPLE_FIELDS: Record<Locale, Record<string, string>> = {
+  en: { name: "Jane Doe", email: "jane@example.com", message: "Hello,\nI would like to know more about your offer.\n\nBest regards\nJane" },
+  de: { name: "Erika Mustermann", email: "erika@example.com", message: "Hallo,\nich hätte gern mehr Infos zu eurem Angebot.\n\nViele Grüße\nErika" },
+};
 
 function asNotify(value: string | null | undefined): NotifyPolicy | null {
   if (value == null) return null;
   if (value === "immediate" || value === "abandoned" || value === "off") return value;
-  throw new AppError(400, "Ungültige Benachrichtigung.");
+  throw new AppError(400, "Invalid notification policy.");
 }
 
 export function createOperator(opts: {
@@ -126,6 +155,8 @@ export function createOperator(opts: {
 
   function formView(form: NonNullable<ReturnType<Store["getForm"]>>, requestUrl?: string): FormView {
     const base = instanceUrl(config, requestUrl);
+    const seen = store.seenFields(form.id);
+    const locale = store.getSettings().locale;
     return {
       id: form.id,
       projectId: form.projectId,
@@ -136,8 +167,16 @@ export function createOperator(opts: {
       turnstileSet: Boolean(form.turnstileSecretEnc),
       notifyPolicy: form.notifyPolicy,
       fieldLabels: form.fieldLabels,
-      seenFields: store.seenFields(form.id),
-      snippet: formSnippet(`${base}/submit`, form.accessKey),
+      templateId: form.templateId,
+      seenFields: seen.names,
+      sentLabels: seen.labels,
+      snippet: formSnippet(`${base}/submit`, form.accessKey, locale),
+      scriptSnippet: scriptSnippet({
+        submitUrl: `${base}/submit`,
+        accessKey: form.accessKey,
+        locale,
+        turnstile: Boolean(form.turnstileSecretEnc),
+      }),
       submitUrl: `${base}/submit`,
       submissionCount: store.countSubmissions({ formId: form.id }),
       failedCount: store.countWhere({ formId: form.id, unacknowledged: true }),
@@ -147,11 +186,11 @@ export function createOperator(opts: {
 
   function submissionView(id: string): SubmissionView {
     const submission = store.getSubmission(id);
-    if (!submission) throw new AppError(404, "Submission nicht gefunden.");
+    if (!submission) throw new AppError(404, "Submission not found.");
     const form = store.getForm(submission.formId);
-    if (!form) throw new AppError(404, "Submission nicht gefunden.");
+    if (!form) throw new AppError(404, "Submission not found.");
     const project = store.getProject(form.projectId);
-    if (!project) throw new AppError(404, "Submission nicht gefunden.");
+    if (!project) throw new AppError(404, "Submission not found.");
     return {
       id: submission.id,
       formId: form.id,
@@ -159,6 +198,7 @@ export function createOperator(opts: {
       projectId: project.id,
       projectLabel: project.label,
       fields: submission.fields,
+      fieldLabels: submission.fieldLabels,
       replyTo: submission.replyTo,
       subject: submission.subject,
       createdAt: submission.createdAt,
@@ -171,13 +211,79 @@ export function createOperator(opts: {
 
   function requireProject(id: string) {
     const project = store.getProject(id);
-    if (!project) throw new AppError(404, "Project nicht gefunden.");
+    if (!project) throw new AppError(404, "Project not found.");
     return project;
+  }
+
+  function requireTemplate(id: string): TemplateRecord {
+    const template = store.getTemplate(id);
+    if (!template) throw new AppError(404, "Template not found.");
+    return template;
+  }
+
+  function templateView(template: TemplateRecord): TemplateView {
+    return { ...template, formCount: store.countFormsUsingTemplate(template.id) };
+  }
+
+  /** Parses and test-renders a template; errors become a 400 naming part and line. */
+  function checkTemplate(source: TemplateSource): string[] {
+    checkTemplateSizes(source);
+    const locale = store.getSettings().locale;
+    try {
+      const compiled = compileTemplate(source, locale);
+      renderCompiled(compiled, templateData(sampleInput(null, null), config.timeZone, locale), locale);
+      return unknownVariables(compiled);
+    } catch (error) {
+      throw new AppError(400, `Template error in ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** A real submission when there is one, otherwise example data. */
+  function sampleInput(projectId: string | null, submissionId: string | null): NotificationInput & { sample: "submission" | "example" } {
+    const locale = store.getSettings().locale;
+    let submission = submissionId ? store.getSubmission(submissionId) : null;
+    if (submissionId && !submission) throw new AppError(404, "Submission not found.");
+    if (!submission && projectId) submission = store.listSubmissions({ projectId, limit: 1, offset: 0 }).items[0] ?? null;
+    const project = projectId ? store.getProject(projectId) : null;
+    if (submission) {
+      const form = store.getForm(submission.formId);
+      if (projectId && form?.projectId !== projectId) throw new AppError(400, "The submission belongs to another website.");
+      return {
+        id: submission.id,
+        projectLabel: store.getProject(form?.projectId ?? "")?.label ?? project?.label ?? "",
+        formName: form?.name ?? "",
+        createdAt: submission.createdAt,
+        fields: submission.fields,
+        fieldLabels: { ...submission.fieldLabels, ...form?.fieldLabels },
+        replyTo: submission.replyTo,
+        subject: submission.subject,
+        sample: "submission",
+      };
+    }
+    const fields = SAMPLE_FIELDS[locale];
+    return {
+      id: "example",
+      projectLabel: project?.label ?? "Example website",
+      formName: locale === "de" ? "Kontakt" : "Contact",
+      createdAt: now(),
+      fields,
+      fieldLabels: {},
+      replyTo: fields.email!,
+      subject: null,
+      sample: "example",
+    };
+  }
+
+  function validTemplateId(projectId: string, templateId: string | null | undefined): string | null | undefined {
+    if (templateId === undefined || templateId === null || templateId === "") return templateId === "" ? null : templateId;
+    const template = store.getTemplate(templateId);
+    if (!template || template.projectId !== projectId) throw new AppError(400, "The template does not belong to this form's website.");
+    return templateId;
   }
 
   function requireForm(id: string) {
     const form = store.getForm(id);
-    if (!form) throw new AppError(404, "Form nicht gefunden.");
+    if (!form) throw new AppError(404, "Form not found.");
     return form;
   }
 
@@ -212,6 +318,7 @@ export function createOperator(opts: {
         notifyPolicy: settings.notifyPolicy,
         retentionDays: settings.retentionDays,
         mcpToken: this.mcpBearer() ?? "",
+        locale: settings.locale,
       };
     },
 
@@ -219,6 +326,7 @@ export function createOperator(opts: {
       adminSmtp?: SmtpPatch | null;
       notifyPolicy?: NotifyPolicy;
       retentionDays?: number | null;
+      locale?: Locale;
     }): SettingsView {
       const current = store.getSettings();
       let adminSmtp = current.adminSmtp;
@@ -227,21 +335,25 @@ export function createOperator(opts: {
         adminSmtp = encryptSmtp(merged, patch.adminSmtp?.password);
       }
       if (patch.notifyPolicy) asNotify(patch.notifyPolicy);
+      if (patch.locale !== undefined && !LOCALES.includes(patch.locale)) {
+        throw new AppError(400, `locale must be one of: ${LOCALES.join(", ")}.`);
+      }
       if (patch.retentionDays != null && (patch.retentionDays < 1 || !Number.isInteger(patch.retentionDays))) {
-        throw new AppError(400, "Aufbewahrung muss eine ganze Zahl von Tagen sein.");
+        throw new AppError(400, "Retention must be a whole number of days.");
       }
       store.updateSettings({
         adminSmtp,
         notifyPolicy: patch.notifyPolicy,
         retentionDays: patch.retentionDays,
+        locale: patch.locale === undefined ? undefined : asLocale(patch.locale),
       });
       return this.getSettings();
     },
 
     async testAdminSmtp(to: string): Promise<void> {
-      if (!isEmail(to)) throw new AppError(400, "Ungültige Testadresse.");
+      if (!isEmail(to)) throw new AppError(400, "Invalid test address.");
       const settings = store.getSettings();
-      if (!settings.adminSmtp) throw new AppError(400, "Kein Admin-SMTP konfiguriert.");
+      if (!settings.adminSmtp) throw new AppError(400, "No admin SMTP configured.");
       await sendTestMail(mailer, box, settings.adminSmtp, to);
     },
 
@@ -260,12 +372,12 @@ export function createOperator(opts: {
       notifyPolicy?: NotifyPolicy | null;
     }): ProjectView {
       const label = input.label.trim();
-      if (!label) throw new AppError(400, "Label fehlt.");
+      if (!label) throw new AppError(400, "Label is missing.");
       let origins: string[];
       try {
         origins = normalizeOrigins(input.origins ?? []);
       } catch (error) {
-        throw new AppError(400, error instanceof Error ? error.message : "Ungültige Origins.");
+        throw new AppError(400, error instanceof Error ? error.message : "Invalid origins.");
       }
       const smtp = encryptSmtp(mergeSmtp(null, input.smtp ?? null), input.smtp?.password);
       return projectView(
@@ -294,7 +406,7 @@ export function createOperator(opts: {
         try {
           origins = normalizeOrigins(patch.origins);
         } catch (error) {
-          throw new AppError(400, error instanceof Error ? error.message : "Ungültige Origins.");
+          throw new AppError(400, error instanceof Error ? error.message : "Invalid origins.");
         }
       }
       const smtp = encryptSmtp(mergeSmtp(current.smtp, patch.smtp), patch.smtp?.password);
@@ -308,7 +420,7 @@ export function createOperator(opts: {
     },
 
     deleteProject(id: string): void {
-      if (!store.deleteProject(id)) throw new AppError(404, "Project nicht gefunden.");
+      if (!store.deleteProject(id)) throw new AppError(404, "Project not found.");
     },
 
     exportProjectCsv(id: string): string {
@@ -317,9 +429,9 @@ export function createOperator(opts: {
     },
 
     async testProjectSmtp(id: string, to: string): Promise<void> {
-      if (!isEmail(to)) throw new AppError(400, "Ungültige Testadresse.");
+      if (!isEmail(to)) throw new AppError(400, "Invalid test address.");
       const project = requireProject(id);
-      if (!project.smtp) throw new AppError(400, "Kein Project-SMTP konfiguriert.");
+      if (!project.smtp) throw new AppError(400, "No project SMTP configured.");
       await sendTestMail(mailer, box, project.smtp, to);
     },
 
@@ -341,12 +453,14 @@ export function createOperator(opts: {
         turnstileSecret?: string | null;
         notifyPolicy?: NotifyPolicy | null;
         fieldLabels?: Record<string, string> | null;
+        templateId?: string | null;
       },
       requestUrl?: string,
     ): FormView {
       requireProject(projectId);
+      const templateId = validTemplateId(projectId, input.templateId) ?? null;
       const name = input.name.trim();
-      if (!name) throw new AppError(400, "Name fehlt.");
+      if (!name) throw new AppError(400, "Name is missing.");
       const recipients = validateRecipients(input.recipients);
       const smtp = encryptSmtp(mergeSmtp(null, input.smtp ?? null), input.smtp?.password);
       const turnstileSecretEnc = input.turnstileSecret ? box.encrypt(input.turnstileSecret) : null;
@@ -360,6 +474,7 @@ export function createOperator(opts: {
           turnstileSecretEnc,
           notifyPolicy: asNotify(input.notifyPolicy),
           fieldLabels: validateFieldLabels(input.fieldLabels),
+          templateId,
           now: now(),
         }),
         requestUrl,
@@ -374,12 +489,15 @@ export function createOperator(opts: {
         smtp?: SmtpPatch | null;
         turnstileSecret?: string | null;
         notifyPolicy?: NotifyPolicy | null;
-        /** Ersetzt alle Feldtitel; null löscht sie. */
+        /** Replaces all field titles; null clears them. */
         fieldLabels?: Record<string, string> | null;
+        /** Mail template of the same website; null uses the default. */
+        templateId?: string | null;
       },
       requestUrl?: string,
     ): FormView {
       const current = requireForm(id);
+      const templateId = validTemplateId(current.projectId, patch.templateId);
       const smtp = encryptSmtp(mergeSmtp(current.smtp, patch.smtp), patch.smtp?.password);
       let turnstileSecretEnc = current.turnstileSecretEnc;
       if (patch.turnstileSecret === null) turnstileSecretEnc = null;
@@ -393,12 +511,110 @@ export function createOperator(opts: {
         turnstileSecretEnc,
         notifyPolicy: patch.notifyPolicy === undefined ? current.notifyPolicy : asNotify(patch.notifyPolicy),
         fieldLabels: patch.fieldLabels === undefined ? current.fieldLabels : validateFieldLabels(patch.fieldLabels),
+        templateId,
       });
       return formView(updated!, requestUrl);
     },
 
+    listTemplates(projectId: string): TemplateView[] {
+      requireProject(projectId);
+      return store.listTemplates(projectId).map(templateView);
+    },
+
+    getTemplate(id: string): TemplateView {
+      return templateView(requireTemplate(id));
+    },
+
+    /** The built-in template in the instance language, plus the syntax and
+     *  variable reference. The starting point for a custom template. */
+    defaultTemplate(): TemplateSource & { locale: Locale; reference: string } {
+      const locale = store.getSettings().locale;
+      return { ...defaultTemplate(locale), locale, reference: TEMPLATE_REFERENCE };
+    },
+
+    /** Without html, the template starts as a copy of the default. */
+    createTemplate(
+      projectId: string,
+      input: { name: string; subject?: string; html?: string; text?: string },
+    ): TemplateView & { warnings: string[] } {
+      requireProject(projectId);
+      const name = input.name.trim().slice(0, MAX_TEMPLATE_NAME);
+      if (!name) throw new AppError(400, "Name is missing.");
+      if (store.countTemplates(projectId) >= MAX_TEMPLATES_PER_PROJECT) {
+        throw new AppError(400, `A website can have at most ${MAX_TEMPLATES_PER_PROJECT} templates.`);
+      }
+      const base = defaultTemplate(store.getSettings().locale);
+      const fromDefault = !input.html?.trim();
+      const source: TemplateSource = {
+        subject: input.subject ?? (fromDefault ? base.subject : ""),
+        html: fromDefault ? base.html : input.html!,
+        text: input.text ?? (fromDefault ? base.text : ""),
+      };
+      const warnings = checkTemplate(source);
+      const created = store.createTemplate({ projectId, name, ...source, now: now() });
+      return { ...templateView(created), warnings };
+    },
+
+    updateTemplate(
+      id: string,
+      patch: { name?: string; subject?: string; html?: string; text?: string },
+    ): TemplateView & { warnings: string[] } {
+      const current = requireTemplate(id);
+      const name = patch.name === undefined ? current.name : patch.name.trim().slice(0, MAX_TEMPLATE_NAME);
+      if (!name) throw new AppError(400, "Name is missing.");
+      const source: TemplateSource = {
+        subject: patch.subject ?? current.subject,
+        html: patch.html ?? current.html,
+        text: patch.text ?? current.text,
+      };
+      const warnings = checkTemplate(source);
+      const updated = store.updateTemplate(id, { name, ...source, now: now() });
+      return { ...templateView(updated!), warnings };
+    },
+
+    deleteTemplate(id: string): void {
+      if (!store.deleteTemplate(id)) throw new AppError(404, "Template not found.");
+    },
+
+    /**
+     * Renders a template without saving: a saved one (templateId), unsaved
+     * sources, or the default when neither is given. Uses the given submission,
+     * else the website's latest one, else example data.
+     */
+    previewTemplate(input: {
+      projectId?: string;
+      templateId?: string;
+      subject?: string;
+      html?: string;
+      text?: string;
+      submissionId?: string;
+    }): { subject: string; html: string; text: string; warnings: string[]; sample: "submission" | "example" } {
+      const locale = store.getSettings().locale;
+      let projectId = input.projectId ?? null;
+      let source: TemplateSource;
+      if (input.templateId) {
+        const saved = requireTemplate(input.templateId);
+        projectId = saved.projectId;
+        source = { subject: input.subject ?? saved.subject, html: input.html ?? saved.html, text: input.text ?? saved.text };
+      } else if (input.html !== undefined) {
+        source = { subject: input.subject ?? "", html: input.html, text: input.text ?? "" };
+      } else {
+        source = defaultTemplate(locale);
+      }
+      if (projectId) requireProject(projectId);
+      checkTemplateSizes(source);
+      const { sample, ...sampleData } = sampleInput(projectId, input.submissionId ?? null);
+      try {
+        const compiled = compileTemplate(source, locale);
+        const rendered = renderCompiled(compiled, templateData(sampleData, config.timeZone, locale), locale);
+        return { ...rendered, warnings: unknownVariables(compiled), sample };
+      } catch (error) {
+        throw new AppError(400, `Template error in ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+
     deleteForm(id: string): void {
-      if (!store.deleteForm(id)) throw new AppError(404, "Form nicht gefunden.");
+      if (!store.deleteForm(id)) throw new AppError(404, "Form not found.");
     },
 
     rotateAccessKey(id: string, requestUrl?: string): FormView {
@@ -413,11 +629,11 @@ export function createOperator(opts: {
     },
 
     async testFormSmtp(id: string, to: string): Promise<void> {
-      if (!isEmail(to)) throw new AppError(400, "Ungültige Testadresse.");
+      if (!isEmail(to)) throw new AppError(400, "Invalid test address.");
       const form = requireForm(id);
       const project = requireProject(form.projectId);
       const smtp = form.smtp ?? project.smtp;
-      if (!smtp) throw new AppError(400, "Kein SMTP-Konto für dieses Formular.");
+      if (!smtp) throw new AppError(400, "No SMTP account for this form.");
       await sendTestMail(mailer, box, smtp, to);
     },
 
@@ -433,7 +649,7 @@ export function createOperator(opts: {
       return { items: items.map((item) => submissionView(item.id)), total };
     },
 
-    /** Kennzahlen und Zeitreihe für das Dashboard, eine Website oder ein Formular. */
+    /** Key figures and time series for the dashboard, a website or a form. */
     stats(request: StatsRequest): Stats & {
       forms: { id: string; name: string; projectId: string }[];
       projects: { id: string; label: string }[];
@@ -445,7 +661,7 @@ export function createOperator(opts: {
       try {
         range = resolveRange(request, now());
       } catch (error) {
-        throw new AppError(400, error instanceof Error ? error.message : "Ungültiger Zeitraum.");
+        throw new AppError(400, error instanceof Error ? error.message : "Invalid time range.");
       }
       const span = range.until - range.since;
       const result = computeStats({
@@ -464,7 +680,7 @@ export function createOperator(opts: {
       };
     },
 
-    /** Favicon der ersten Website-Adresse, 7 Tage zwischengespeichert. */
+    /** Favicon of the first website address, cached for 7 days. */
     async favicon(projectId: string): Promise<{ contentType: string; data: Buffer } | null> {
       const project = requireProject(projectId);
       const origin = project.origins[0];
@@ -477,7 +693,7 @@ export function createOperator(opts: {
       return icon;
     },
 
-    /** Zustellprobleme eines Formulars oder einer Website zur Kenntnis nehmen. */
+    /** Acknowledge delivery problems of a form or a website. */
     acknowledgeFailures(filter: { formId?: string; projectId?: string }): { acknowledged: number } {
       if (filter.formId) requireForm(filter.formId);
       if (filter.projectId) requireProject(filter.projectId);
@@ -489,12 +705,12 @@ export function createOperator(opts: {
     },
 
     deleteSubmission(id: string): void {
-      if (!store.deleteSubmission(id)) throw new AppError(404, "Submission nicht gefunden.");
+      if (!store.deleteSubmission(id)) throw new AppError(404, "Submission not found.");
     },
 
     resendSubmission(id: string): SubmissionView {
       const submission = store.getSubmission(id);
-      if (!submission) throw new AppError(404, "Submission nicht gefunden.");
+      if (!submission) throw new AppError(404, "Submission not found.");
       store.updateMailState(id, {
         mailStatus: "queued",
         mailAttempts: 0,
@@ -505,7 +721,7 @@ export function createOperator(opts: {
       return submissionView(id);
     },
 
-    /** Alle endgültig gescheiterten Zustellungen eines Formulars neu einreihen. */
+    /** Requeue all finally failed deliveries of a form. */
     resendFailures(formId: string): { queued: number } {
       requireForm(formId);
       const { items } = store.listSubmissions({ formId, status: "failed", limit: 10_000, offset: 0 });

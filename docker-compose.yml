@@ -8,7 +8,7 @@ services:
       SND_HOST: 0.0.0.0
       SND_PORT: "3000"
       SND_TRUST_PROXY: "1"
-      # Ohne diese URL entstehen Snippets mit http:// und das Cookie ist nicht Secure.
+      # Without this URL snippets use http:// and the cookie is not Secure.
       SND_PUBLIC_URL: ${SND_PUBLIC_URL:-https://${SND_DOMAIN:-localhost}}
     volumes:
       - snd_data:/data

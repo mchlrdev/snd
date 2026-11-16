@@ -11,8 +11,8 @@ async function login(app: ReturnType<typeof makeApp>["app"], password: string, i
   });
 }
 
-describe("Sicherheit der Operator-API", () => {
-  it("lässt Sitzungen nach 30 Tagen ablaufen", async () => {
+describe("operator API security", () => {
+  it("expires sessions after 30 days", async () => {
     const { app, config, clock } = makeApp();
     const cookie = cookieFrom(await login(app, config.password));
     expect((await app.request("https://snd.test/api/me", { headers: { cookie } })).status).toBe(200);
@@ -20,14 +20,14 @@ describe("Sicherheit der Operator-API", () => {
     expect((await app.request("https://snd.test/api/me", { headers: { cookie } })).status).toBe(401);
   });
 
-  it("bremst Passwort-Raten pro IP", async () => {
+  it("throttles password guessing per IP", async () => {
     const { app, config } = makeApp();
     for (let i = 0; i < 10; i++) expect((await login(app, "falsch")).status).toBe(401);
     expect((await login(app, config.password)).status).toBe(429);
     expect((await login(app, config.password, "198.51.100.7")).status).toBe(200);
   });
 
-  it("lehnt schreibende Requests von fremden Origins ab", async () => {
+  it("rejects writing requests from foreign origins", async () => {
     const { app, config } = makeApp();
     const cookie = cookieFrom(await login(app, config.password));
     const cross = await app.request("https://snd.test/api/projects", {
@@ -44,7 +44,7 @@ describe("Sicherheit der Operator-API", () => {
     expect(same.status).toBe(201);
   });
 
-  it("setzt Schutz-Header auf der Konsole, nicht auf /submit", async () => {
+  it("sets protective headers on the console, not on /submit", async () => {
     const { app } = makeApp();
     const res = await app.request("https://snd.test/health");
     expect(res.headers.get("x-frame-options")).toBe("DENY");
@@ -53,7 +53,7 @@ describe("Sicherheit der Operator-API", () => {
     expect(submit.headers.get("x-frame-options")).toBeNull();
   });
 
-  it("entschärft Formeln im CSV-Export", () => {
+  it("defuses formulas in the CSV export", () => {
     const csv = submissionsToCsv([
       {
         id: "1",

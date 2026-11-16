@@ -1,14 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type Form, type Project, type Settings } from "./api";
+import { setLocale } from "./lib/i18n";
 
 type ProjectsContextValue = {
   projects: Project[];
   settings: Settings | null;
   loaded: boolean;
-  /** Lädt Websites, alle Formulare und die Einstellungen neu (Sidebar-Zähler, Status). */
+  /** Reloads websites, all forms and the settings (sidebar counts, status). */
   reload: () => Promise<void>;
   formsFor: (projectId: string) => Form[];
-  /** Kompatibel zum alten Aufruf: lädt die Formulare einer Website neu. */
+  /** Compatible with the old call: reloads one website's forms. */
   loadForms: (projectId: string) => Promise<void>;
 };
 
@@ -31,6 +32,7 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
       const entries = await Promise.all(list.map(async (project) => [project.id, await api.forms(project.id)] as const));
       setProjects(list);
       setSettings(nextSettings);
+      setLocale(nextSettings.locale);
       setForms(Object.fromEntries(entries));
     } finally {
       setLoaded(true);
@@ -58,6 +60,6 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
 
 export function useProjects(): ProjectsContextValue {
   const value = useContext(ProjectsContext);
-  if (!value) throw new Error("useProjects braucht ProjectsProvider");
+  if (!value) throw new Error("useProjects needs a ProjectsProvider");
   return value;
 }

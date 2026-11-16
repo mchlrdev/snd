@@ -7,6 +7,7 @@ import type { SecretBox } from "../crypto.js";
 import type { Store } from "../store.js";
 import type { MailQueue } from "../mail.js";
 import { clientIp } from "../client-ip.js";
+import { tr, type Locale } from "../i18n.js";
 
 type SubmitEnv = {
   store: Store;
@@ -34,16 +35,16 @@ function wantsJson(c: Context): boolean {
 }
 
 
-async function readFields(c: Context): Promise<Record<string, string>> {
+async function readFields(c: Context, locale: Locale): Promise<Record<string, string>> {
   const body = await c.req.parseBody({ all: true });
   const fields: Record<string, string> = {};
   for (const [key, value] of Object.entries(body)) {
     if (value instanceof File) {
-      throw new AppError(400, "Datei-Uploads werden nicht unterstützt.");
+      throw new AppError(400, tr(locale, "File uploads are not supported."));
     }
     if (Array.isArray(value)) {
       if (value.some((item) => item instanceof File)) {
-        throw new AppError(400, "Datei-Uploads werden nicht unterstützt.");
+        throw new AppError(400, tr(locale, "File uploads are not supported."));
       }
       fields[key] = value.map(String).join(", ");
     } else {
@@ -57,15 +58,16 @@ function submitResponse(
   c: Context,
   result: { redirect: string | null },
   origin: string | null,
+  locale: Locale,
 ): Response {
   const headers = corsHeaders(origin);
   if (wantsJson(c)) {
-    return c.json({ success: true, message: "Formular gesendet." }, 200, headers);
+    return c.json({ success: true, message: tr(locale, "Form submitted.") }, 200, headers);
   }
   if (result.redirect) {
     return c.redirect(result.redirect, 303);
   }
-  return c.text("Kein redirect und keine JSON-Antwort angefordert.", 400, headers);
+  return c.text(tr(locale, "No redirect given and no JSON response requested."), 400, headers);
 }
 
 function submitError(c: Context, error: AppError, origin: string | null): Response {
@@ -89,20 +91,15 @@ export function mountSubmit(app: Hono, env: SubmitEnv): void {
       maxSize: MAX_BODY_BYTES,
       onError: (c) => {
         const origin = c.req.header("origin") ?? null;
-        if (wantsJson(c)) {
-          return c.json(
-            { success: false, message: "Formular ist zu groß." },
-            413,
-            corsHeaders(origin),
-          );
-        }
-        return c.text("Formular ist zu groß.", 413, corsHeaders(origin));
+        const locale = env.store.getSettings().locale;
+        return submitError(c, new AppError(413, tr(locale, "Form is too large.")), origin);
       },
     }),
     async (c) => {
       const originHeader = c.req.header("origin") ?? null;
+      const locale = env.store.getSettings().locale;
       try {
-        const fields = await readFields(c);
+        const fields = await readFields(c, locale);
         const result = await acceptSubmission(
           env.store,
           env.limits,
@@ -119,7 +116,7 @@ export function mountSubmit(app: Hono, env: SubmitEnv): void {
           (enc) => env.box.decrypt(enc),
         );
         if (!result.honeypot) void env.queue.tick();
-        return submitResponse(c, result, originHeader);
+        return submitResponse(c, result, originHeader, locale);
       } catch (error) {
         if (error instanceof AppError) return submitError(c, error, originHeader);
         throw error;

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Banner, BannerDescription } from "@/components/ui/banner";
 import { errorText } from "../lib/format";
+import { t } from "@/lib/i18n";
 
 /** Confirms an action that can't be undone. Stays open (and shows the error)
  *  if the action fails, instead of closing as if it had worked. */
@@ -17,7 +18,7 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = "Löschen",
+  confirmLabel,
   onOpenChange,
   onConfirm,
 }: {
@@ -50,7 +51,7 @@ export function ConfirmDialog({
         ) : null}
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
-            Abbrechen
+            {t("Cancel")}
           </Button>
           <Button
             variant="primary"
@@ -63,13 +64,13 @@ export function ConfirmDialog({
                 await onConfirm();
                 onOpenChange(false);
               } catch (err) {
-                setError(errorText(err, "Das hat nicht geklappt."));
+                setError(errorText(err, t("That didn't work.")));
               } finally {
                 setBusy(false);
               }
             }}
           >
-            {confirmLabel}
+            {confirmLabel ?? t("Delete")}
           </Button>
         </DialogFooter>
       </DialogContent>

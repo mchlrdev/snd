@@ -28,8 +28,8 @@ export type AppEnv = {
 
 export function createApp(env: AppEnv): Hono {
   const app = new Hono();
-  // Operator-Konsole: kein Einbetten in fremde Seiten, strikte CSP. /submit
-  // bleibt außen vor, damit Formular-Antworten (Redirect, CORS) unverändert sind.
+  // Operator console: no framing by other sites, strict CSP. /submit is left
+  // out so form responses (redirect, CORS) stay unchanged.
   const consoleHeaders = secureHeaders({
     xFrameOptions: "DENY",
     referrerPolicy: "same-origin",
@@ -79,13 +79,13 @@ export function createApp(env: AppEnv): Hono {
       return c.json({ error: error.message }, error.status as 400);
     }
     console.error(error);
-    return c.json({ error: "Interner Fehler." }, 500);
+    return c.json({ error: "Internal error." }, 500);
   });
   app.notFound((c) => {
     if (c.req.method === "GET" && existsSync(indexHtml) && !c.req.path.startsWith("/api") && c.req.path !== "/mcp" && c.req.path !== "/submit") {
       return c.html(readFileSync(indexHtml, "utf8"));
     }
-    return c.json({ error: "Nicht gefunden." }, 404);
+    return c.json({ error: "Not found." }, 404);
   });
   return app;
 }

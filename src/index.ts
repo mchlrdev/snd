@@ -30,9 +30,9 @@ const app = createApp({
 });
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host });
-console.log(`snd lauscht auf ${config.host}:${config.port}`);
+console.log(`snd listening on ${config.host}:${config.port}`);
 if (config.passwordIsDefault) {
-  console.warn('SND_PASSWORD fehlt — lokales Passwort ist "snd".');
+  console.warn('SND_PASSWORD is not set — the local password is "snd".');
 }
 
 const mailTimer = setInterval(() => void queue.tick(), 5_000);
@@ -49,7 +49,7 @@ async function dailyBackup(current: typeof store, dataDir: string): Promise<void
   try {
     await current.backup(dest);
   } catch (error) {
-    console.error("Backup fehlgeschlagen:", error);
+    console.error("Backup failed:", error);
   }
 }
 

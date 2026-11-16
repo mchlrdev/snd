@@ -41,7 +41,7 @@ function post(app: ReturnType<typeof makeApp>["app"], body: Record<string, strin
 }
 
 describe("POST /submit", () => {
-  it("speichert und antwortet JSON", async () => {
+  it("stores and answers with JSON", async () => {
     const { app, operator, store, mail, queue } = makeApp();
     const { form } = await seedForm(operator);
     const res = await post(app, {
@@ -51,7 +51,7 @@ describe("POST /submit", () => {
       message: "Hallo",
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true, message: "Formular gesendet." });
+    expect(await res.json()).toEqual({ success: true, message: "Form submitted." });
     const listed = store.listSubmissions({ formId: form.id, limit: 10, offset: 0 });
     expect(listed.total).toBe(1);
     expect(listed.items[0]?.fields).toMatchObject({
@@ -67,7 +67,7 @@ describe("POST /submit", () => {
     expect(mail.sent[0]?.account.password).toBe("pw");
   });
 
-  it("leitet mit 303 auf die Origin der Website um", async () => {
+  it("redirects with 303 to the website's origin", async () => {
     const { app, operator } = makeApp();
     const { form } = await seedForm(operator);
     const res = await post(
@@ -83,20 +83,40 @@ describe("POST /submit", () => {
     expect(res.headers.get("location")).toBe("https://site.example/danke");
   });
 
-  it("lehnt fehlendes redirect ohne JSON ab", async () => {
+  it("rejects a missing redirect without JSON", async () => {
     const { app, operator, store } = makeApp();
     const { form } = await seedForm(operator);
-    const res = await post(
-      app,
-      { access_key: form.accessKey, name: "Ada" },
-      { accept: "text/html" },
-    );
+    const res = await post(app, { access_key: form.accessKey, name: "Ada" }, { accept: "text/html" });
     expect(res.status).toBe(400);
     expect(store.countSubmissions({ formId: form.id })).toBe(0);
-    expect(await res.text()).toContain("Kein redirect");
+    expect(await res.text()).toContain("No redirect");
   });
 
-  it("lehnt fremde Origins ab", async () => {
+  it("stores field titles sent as label:<field> and uses them in the mail", async () => {
+    const { app, operator, mail, queue } = makeApp();
+    const { form } = await seedForm(operator);
+    const res = await post(app, {
+      access_key: form.accessKey,
+      message: "Hi",
+      "label:message": "  Your request\n",
+      "label:ghost": "Not a field",
+    });
+    expect(res.status).toBe(200);
+    const listed = operator.listSubmissions({ formId: form.id, limit: 10, offset: 0 });
+    expect(listed.items[0]?.fields).toEqual({ message: "Hi" });
+    expect(listed.items[0]?.fieldLabels).toEqual({ message: "Your request" });
+    expect(operator.getForm(form.id).sentLabels).toEqual({ message: "Your request" });
+    await queue.tick();
+    expect(mail.sent[0]?.mail.text).toContain("Your request\nHi");
+
+    // A title set in the console wins.
+    await operator.updateForm(form.id, { fieldLabels: { message: "Request" } });
+    await post(app, { access_key: form.accessKey, message: "Again", "label:message": "Your request" });
+    await queue.tick();
+    expect(mail.sent[1]?.mail.text).toContain("Request\nAgain");
+  });
+
+  it("rejects foreign origins", async () => {
     const { app, operator, store } = makeApp();
     const { form } = await seedForm(operator);
     const res = await post(
@@ -108,7 +128,7 @@ describe("POST /submit", () => {
     expect(store.countSubmissions({ formId: form.id })).toBe(0);
   });
 
-  it("lehnt redirect auf eine fremde Origin ab", async () => {
+  it("rejects a redirect to a foreign origin", async () => {
     const { app, operator } = makeApp();
     const { form } = await seedForm(operator);
     const res = await post(app, {
@@ -119,7 +139,7 @@ describe("POST /submit", () => {
     expect(res.status).toBe(400);
   });
 
-  it("verwirft Honeypot still und speichert nicht", async () => {
+  it("silently drops honeypot hits without storing", async () => {
     const { app, operator, store, mail, queue } = makeApp();
     const { form } = await seedForm(operator);
     const res = await post(app, {
@@ -133,7 +153,7 @@ describe("POST /submit", () => {
     expect(mail.sent).toHaveLength(0);
   });
 
-  it("begrenzt die Feldanzahl", async () => {
+  it("limits the number of fields", async () => {
     const { app, operator } = makeApp();
     const { form } = await seedForm(operator);
     const fields: Record<string, string> = { access_key: form.accessKey };
@@ -157,7 +177,7 @@ describe("POST /submit", () => {
     expect(last).toBe(429);
   });
 
-  it("lässt den alten Access Key nach Rotation tot", async () => {
+  it("kills the old access key after rotation", async () => {
     const { app, operator } = makeApp();
     const { form } = await seedForm(operator);
     const oldKey = form.accessKey;
@@ -168,7 +188,7 @@ describe("POST /submit", () => {
     expect(live.status).toBe(200);
   });
 
-  it("prüft Turnstile fail-closed", async () => {
+  it("checks Turnstile fail-closed", async () => {
     const { app, operator } = makeApp({
       turnstile: async () => "unavailable",
     });
@@ -179,6 +199,19 @@ describe("POST /submit", () => {
       "cf-turnstile-response": "token",
     });
     expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ message: "Bitte nochmal absenden." });
+    expect(await res.json()).toMatchObject({ message: "Please submit again." });
+  });
+});
+
+describe("POST /submit in German", () => {
+  it("answers visitors in the instance language", async () => {
+    const { app, operator } = makeApp();
+    operator.updateSettings({ locale: "de" });
+    const res = await app.request("https://snd.test/submit", {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+      body: "access_key=nope",
+    });
+    expect(await res.json()).toMatchObject({ message: "Formular nicht gefunden." });
   });
 });

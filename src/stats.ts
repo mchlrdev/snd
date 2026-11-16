@@ -15,7 +15,7 @@ export type StatsPoint = { key: string; total: number; delivered: number; pendin
 export type FieldSummary = {
   name: string;
   filled: number;
-  /** Häufigste Werte – nur bei Auswahlfeldern (wenige, kurze Werte), sonst null. */
+  /** Most common values, only for choice fields (few, short values), otherwise null. */
   values: { value: string; count: number }[] | null;
 };
 
@@ -26,7 +26,7 @@ export type Stats = {
   timeZone: string;
   series: StatsPoint[];
   totals: { total: number; delivered: number; pending: number; failed: number };
-  /** Anzahl im gleich langen Zeitraum davor – für "mehr/weniger als vorher". */
+  /** Count in the equally long period before, for "more/fewer than before". */
   previousTotal: number;
   byForm: { formId: string; total: number }[];
   byProject: { projectId: string; total: number }[];
@@ -62,7 +62,7 @@ export function bucketKey(ms: number, bucket: StatsBucket, timeZone: string): st
   if (bucket === "month") return day.slice(0, 7);
   const [y, m, d] = day.split("-").map(Number) as [number, number, number];
   const utc = Date.UTC(y, m - 1, d);
-  const weekday = (new Date(utc).getUTCDay() + 6) % 7; // Montag = 0
+  const weekday = (new Date(utc).getUTCDay() + 6) % 7; // Monday = 0
   return new Date(utc - weekday * DAY).toISOString().slice(0, 10);
 }
 
@@ -169,7 +169,7 @@ export function resolveRange(request: StatsRequest, now: number): { since: numbe
   const until = request.until ?? now;
   const days = Math.min(Math.max(Math.trunc(request.days ?? 30), 1), 3660);
   const since = request.since ?? until - days * DAY;
-  if (!(since < until)) throw new Error("Zeitraum ist leer.");
+  if (!(since < until)) throw new Error("The time range is empty.");
   const span = (until - since) / DAY;
   const bucket = request.bucket ?? (span <= 62 ? "day" : span <= 370 ? "week" : "month");
   return { since, until, bucket };

@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { newId } from "./ids.js";
+import { asLocale, type Locale } from "./i18n.js";
 import type {
   FormRecord,
   MailJob,
@@ -13,6 +14,7 @@ import type {
   SubmissionFilter,
   SmtpRecord,
   SubmissionRecord,
+  TemplateRecord,
 } from "./types.js";
 
 type Row = Record<string, unknown>;
@@ -160,7 +162,21 @@ function formFrom(row: Row): FormRecord {
     turnstileSecretEnc: row.turnstile_secret_enc ? String(row.turnstile_secret_enc) : null,
     notifyPolicy: row.notify_policy ? asNotify(row.notify_policy) : null,
     fieldLabels: parseLabels(row.field_labels),
+    templateId: row.template_id ? String(row.template_id) : null,
     createdAt: Number(row.created_at),
+  };
+}
+
+function templateFrom(row: Row): TemplateRecord {
+  return {
+    id: String(row.id),
+    projectId: String(row.project_id),
+    name: String(row.name),
+    subject: String(row.subject ?? ""),
+    html: String(row.html ?? ""),
+    text: String(row.text ?? ""),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
   };
 }
 
@@ -185,6 +201,7 @@ function submissionFrom(row: Row): SubmissionRecord {
     formId: String(row.form_id),
     projectId: String(row.project_id ?? ""),
     fields: JSON.parse(String(row.fields_json)) as Record<string, string>,
+    fieldLabels: parseLabels(row.field_labels),
     replyTo: row.reply_to ? String(row.reply_to) : null,
     subject: row.subject ? String(row.subject) : null,
     createdAt: Number(row.created_at),
@@ -201,8 +218,8 @@ const DELIVERY_SQL: Record<DeliveryFilter, string> = {
   failed: "s.mail_status = 'abandoned'",
 };
 
-/** WHERE-Klausel und Parameter für einen Nachrichtenfilter. Alle Werte gehen
- *  als Parameter in die Abfrage, nie als Text. */
+/** WHERE clause and parameters for a submission filter. All values go into
+ *  the query as parameters, never as text. */
 function submissionWhere(filter: SubmissionFilter): { clause: string; params: Record<string, unknown> } {
   const where: string[] = [];
   const params: Record<string, unknown> = {};
@@ -252,7 +269,7 @@ export class Store {
     }
     const submissionCols = this.db.prepare("PRAGMA table_info(submissions)").all() as { name: string }[];
     if (!submissionCols.some((col) => col.name === "failure_ack_at")) {
-      // Wann der Operator eine endgültig gescheiterte Zustellung zur Kenntnis genommen hat.
+      // When the operator acknowledged a finally failed delivery.
       this.db.exec("ALTER TABLE submissions ADD COLUMN failure_ack_at INTEGER");
     }
     this.db.exec(`CREATE TABLE IF NOT EXISTS favicons (
@@ -270,6 +287,74 @@ export class Store {
     if (!formCols.some((col) => col.name === "field_labels")) {
       this.db.exec("ALTER TABLE forms ADD COLUMN field_labels TEXT");
     }
+    if (!submissionCols.some((col) => col.name === "field_labels")) {
+      this.db.exec("ALTER TABLE submissions ADD COLUMN field_labels TEXT");
+    }
+    this.db.exec(`CREATE TABLE IF NOT EXISTS mail_templates (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      html TEXT NOT NULL,
+      text TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_mail_templates_project ON mail_templates(project_id);`);
+    if (!formCols.some((col) => col.name === "template_id")) {
+      this.db.exec("ALTER TABLE forms ADD COLUMN template_id TEXT REFERENCES mail_templates(id) ON DELETE SET NULL");
+    }
+    if (!cols.some((col) => col.name === "locale")) {
+      this.db.exec("ALTER TABLE settings ADD COLUMN locale TEXT NOT NULL DEFAULT 'en'");
+    }
+  }
+
+  listTemplates(projectId: string): TemplateRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM mail_templates WHERE project_id = ? ORDER BY name COLLATE NOCASE, created_at")
+      .all(projectId) as Row[];
+    return rows.map(templateFrom);
+  }
+
+  getTemplate(id: string): TemplateRecord | null {
+    const row = this.db.prepare("SELECT * FROM mail_templates WHERE id = ?").get(id) as Row | undefined;
+    return row ? templateFrom(row) : null;
+  }
+
+  countTemplates(projectId: string): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM mail_templates WHERE project_id = ?").get(projectId) as { n: number };
+    return row.n;
+  }
+
+  countFormsUsingTemplate(id: string): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM forms WHERE template_id = ?").get(id) as { n: number };
+    return row.n;
+  }
+
+  createTemplate(input: { projectId: string; name: string; subject: string; html: string; text: string; now: number }): TemplateRecord {
+    const id = newId();
+    this.db
+      .prepare(
+        `INSERT INTO mail_templates (id, project_id, name, subject, html, text, created_at, updated_at)
+         VALUES (@id, @project_id, @name, @subject, @html, @text, @now, @now)`,
+      )
+      .run({ id, project_id: input.projectId, name: input.name, subject: input.subject, html: input.html, text: input.text, now: input.now });
+    return this.getTemplate(id)!;
+  }
+
+  updateTemplate(id: string, patch: { name: string; subject: string; html: string; text: string; now: number }): TemplateRecord | null {
+    this.db
+      .prepare("UPDATE mail_templates SET name = @name, subject = @subject, html = @html, text = @text, updated_at = @now WHERE id = @id")
+      .run({ id, ...patch });
+    return this.getTemplate(id);
+  }
+
+  /** Forms using the template fall back to the built-in default. */
+  deleteTemplate(id: string): boolean {
+    return this.db.transaction(() => {
+      this.db.prepare("UPDATE forms SET template_id = NULL WHERE template_id = ?").run(id);
+      return this.db.prepare("DELETE FROM mail_templates WHERE id = ?").run(id).changes > 0;
+    })();
   }
 
   close(): void {
@@ -298,6 +383,7 @@ export class Store {
       notifyPolicy: asNotify(row.notify_policy),
       retentionDays: row.retention_days == null ? null : Number(row.retention_days),
       mcpTokenEnc: row.mcp_token_enc ? String(row.mcp_token_enc) : null,
+      locale: asLocale(row.locale),
     };
   }
 
@@ -306,12 +392,14 @@ export class Store {
     notifyPolicy?: NotifyPolicy;
     retentionDays?: number | null;
     mcpTokenEnc?: string | null;
+    locale?: Locale;
   }): SettingsRecord {
     const current = this.getSettings();
     const smtp = patch.adminSmtp === undefined ? current.adminSmtp : patch.adminSmtp;
     const notifyPolicy = patch.notifyPolicy ?? current.notifyPolicy;
     const retentionDays = patch.retentionDays === undefined ? current.retentionDays : patch.retentionDays;
     const mcpTokenEnc = patch.mcpTokenEnc === undefined ? current.mcpTokenEnc : patch.mcpTokenEnc;
+    const locale = patch.locale ?? current.locale;
     this.db
       .prepare(
         `UPDATE settings SET
@@ -322,7 +410,8 @@ export class Store {
           admin_smtp_from = @from,
           notify_policy = @notify,
           retention_days = @retention,
-          mcp_token_enc = @mcp
+          mcp_token_enc = @mcp,
+          locale = @locale
         WHERE id = 1`,
       )
       .run({
@@ -334,6 +423,7 @@ export class Store {
         notify: notifyPolicy,
         retention: retentionDays,
         mcp: mcpTokenEnc,
+        locale,
       });
     return this.getSettings();
   }
@@ -434,6 +524,7 @@ export class Store {
     turnstileSecretEnc: string | null;
     notifyPolicy: NotifyPolicy | null;
     fieldLabels: Record<string, string>;
+    templateId?: string | null;
     now: number;
   }): FormRecord {
     const id = newId();
@@ -443,11 +534,11 @@ export class Store {
         `INSERT INTO forms (
           id, project_id, name, access_key, recipients,
           smtp_host, smtp_port, smtp_user, smtp_pass_enc, smtp_from,
-          turnstile_secret_enc, notify_policy, field_labels, created_at
+          turnstile_secret_enc, notify_policy, field_labels, template_id, created_at
         ) VALUES (
           @id, @project_id, @name, @access_key, @recipients,
           @smtp_host, @smtp_port, @smtp_user, @smtp_pass_enc, @smtp_from,
-          @turnstile_secret_enc, @notify_policy, @field_labels, @created_at
+          @turnstile_secret_enc, @notify_policy, @field_labels, @template_id, @created_at
         )`,
       )
       .run({
@@ -460,6 +551,7 @@ export class Store {
         turnstile_secret_enc: input.turnstileSecretEnc,
         notify_policy: input.notifyPolicy,
         field_labels: JSON.stringify(input.fieldLabels),
+        template_id: input.templateId ?? null,
         created_at: input.now,
       });
     return this.getForm(id)!;
@@ -475,6 +567,7 @@ export class Store {
       turnstileSecretEnc?: string | null;
       notifyPolicy?: NotifyPolicy | null;
       fieldLabels?: Record<string, string>;
+      templateId?: string | null;
     },
   ): FormRecord | null {
     const current = this.getForm(id);
@@ -496,7 +589,8 @@ export class Store {
           smtp_from = @smtp_from,
           turnstile_secret_enc = @turnstile_secret_enc,
           notify_policy = @notify_policy,
-          field_labels = @field_labels
+          field_labels = @field_labels,
+          template_id = @template_id
         WHERE id = @id`,
       )
       .run({
@@ -508,6 +602,7 @@ export class Store {
         turnstile_secret_enc: turnstile,
         notify_policy: notifyPolicy,
         field_labels: JSON.stringify(patch.fieldLabels ?? current.fieldLabels),
+        template_id: patch.templateId === undefined ? current.templateId : patch.templateId,
       });
     return this.getForm(id);
   }
@@ -520,6 +615,7 @@ export class Store {
   createSubmission(input: {
     formId: string;
     fields: Record<string, string>;
+    fieldLabels?: Record<string, string>;
     replyTo: string | null;
     subject: string | null;
     now: number;
@@ -528,10 +624,10 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO submissions (
-          id, form_id, fields_json, reply_to, subject, created_at,
+          id, form_id, fields_json, field_labels, reply_to, subject, created_at,
           mail_status, mail_attempts, last_error, next_attempt_at
         ) VALUES (
-          @id, @form_id, @fields_json, @reply_to, @subject, @created_at,
+          @id, @form_id, @fields_json, @field_labels, @reply_to, @subject, @created_at,
           'queued', 0, NULL, @created_at
         )`,
       )
@@ -539,6 +635,7 @@ export class Store {
         id,
         form_id: input.formId,
         fields_json: JSON.stringify(input.fields),
+        field_labels: input.fieldLabels && Object.keys(input.fieldLabels).length ? JSON.stringify(input.fieldLabels) : null,
         reply_to: input.replyTo,
         subject: input.subject,
         created_at: input.now,
@@ -596,7 +693,7 @@ export class Store {
     ).n;
   }
 
-  /** Zeitstempel, Status und Felder im Zeitraum – Rohdaten für Auswertungen. */
+  /** Timestamp, status and fields in the range: raw data for stats. */
   submissionsForStats(filter: SubmissionFilter): { createdAt: number; mailStatus: MailStatus; formId: string; projectId: string; fields: Record<string, string> }[] {
     const { clause, params } = submissionWhere(filter);
     const rows = this.db
@@ -614,7 +711,7 @@ export class Store {
     }));
   }
 
-  /** Quittiert alle offenen Zustellprobleme im Filter. */
+  /** Acknowledges all open delivery problems in the filter. */
   acknowledgeFailures(filter: SubmissionFilter, at: number): number {
     const { clause, params } = submissionWhere({ ...filter, unacknowledged: true });
     return this.db
@@ -645,20 +742,25 @@ export class Store {
       .run(projectId, origin, icon?.contentType ?? null, icon?.data ?? null, now);
   }
 
-  /** Feldnamen der letzten Nachrichten eines Forms, in der Reihenfolge der neuesten. */
-  seenFields(formId: string, limit = 200): string[] {
+  /** Field names of a form's latest submissions, newest first, and the
+   *  titles the website sent for them (the newest title wins). */
+  seenFields(formId: string, limit = 200): { names: string[]; labels: Record<string, string> } {
     const rows = this.db
-      .prepare("SELECT fields_json FROM submissions WHERE form_id = ? ORDER BY created_at DESC LIMIT ?")
-      .all(formId, limit) as { fields_json: string }[];
+      .prepare("SELECT fields_json, field_labels FROM submissions WHERE form_id = ? ORDER BY created_at DESC LIMIT ?")
+      .all(formId, limit) as { fields_json: string; field_labels: string | null }[];
     const names = new Set<string>();
+    const labels: Record<string, string> = {};
     for (const row of rows) {
       try {
         for (const key of Object.keys(JSON.parse(row.fields_json) as Record<string, unknown>)) names.add(key);
       } catch {
-        // Kaputte Zeile überspringen.
+        // Skip a broken row.
+      }
+      for (const [key, title] of Object.entries(parseLabels(row.field_labels))) {
+        if (!Object.hasOwn(labels, key)) labels[key] = title;
       }
     }
-    return [...names];
+    return { names: [...names], labels };
   }
 
   countSubmissions(filter: { formId?: string; projectId?: string }): number {
@@ -709,6 +811,11 @@ export class Store {
             f.recipients AS form_recipients,
             f.notify_policy AS form_notify_policy,
             f.field_labels AS form_field_labels,
+            t.id AS template_id,
+            t.subject AS template_subject,
+            t.html AS template_html,
+            t.text AS template_text,
+            st.locale AS instance_locale,
             f.smtp_host AS form_smtp_host,
             f.smtp_port AS form_smtp_port,
             f.smtp_user AS form_smtp_user,
@@ -727,6 +834,7 @@ export class Store {
          JOIN forms f ON f.id = s.form_id
          JOIN projects p ON p.id = f.project_id
          JOIN settings st ON st.id = 1
+         LEFT JOIN mail_templates t ON t.id = f.template_id
          WHERE s.mail_status IN ('queued', 'failed')
            AND s.next_attempt_at IS NOT NULL
            AND s.next_attempt_at <= @now
@@ -741,7 +849,12 @@ export class Store {
         ...submission,
         projectId: String(row.project_id),
         formName: String(row.form_name),
-        fieldLabels: parseLabels(row.form_field_labels),
+        // Titles set in the console win over the ones the website sent.
+        fieldLabels: { ...submission.fieldLabels, ...parseLabels(row.form_field_labels) },
+        template: row.template_id
+          ? { subject: String(row.template_subject ?? ""), html: String(row.template_html ?? ""), text: String(row.template_text ?? "") }
+          : null,
+        locale: asLocale(row.instance_locale),
         projectLabel: String(row.project_label),
         recipients: parseRecipients(String(row.form_recipients)),
         formSmtp: smtpFrom(

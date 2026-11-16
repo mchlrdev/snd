@@ -10,6 +10,8 @@ import { ProjectDetailPage } from "./pages/ProjectDetail";
 import { FormDetailPage } from "./pages/FormDetail";
 import { SettingsPage } from "./pages/Settings";
 import { ProjectsProvider } from "./projects-context";
+import { t, useLocale } from "./lib/i18n";
+import { TemplateEditorPage } from "./pages/TemplateEditor";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -29,7 +31,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
   if (state === "offline") {
     return (
       <div className="flex min-h-svh items-center justify-center px-6 text-center text-muted-foreground">
-        snd ist gerade nicht erreichbar. Lade die Seite gleich noch einmal.
+        {t("snd can't be reached right now. Reload the page in a moment.")}
       </div>
     );
   }
@@ -43,9 +45,12 @@ function LegacyNewForm() {
 }
 
 export default function App() {
+  // Re-renders every page when the language changes; module-level labels
+  // are translated at render time.
+  const locale = useLocale();
   return (
     <MotionConfig reducedMotion="user">
-      <SizeProvider size="compact">
+      <SizeProvider size="compact" key={locale}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
@@ -61,6 +66,7 @@ export default function App() {
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
           <Route path="/projects/:id/forms/new" element={<LegacyNewForm />} />
           <Route path="/forms/:id" element={<FormDetailPage />} />
+          <Route path="/templates/:id" element={<TemplateEditorPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

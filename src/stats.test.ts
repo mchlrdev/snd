@@ -5,16 +5,16 @@ import { makeApp } from "./test-helpers.js";
 
 const DAY = 86_400_000;
 
-describe("Auswertung", () => {
-  it("bildet Tages-, Wochen- und Monats-Buckets in der Zeitzone", () => {
-    const t = Date.parse("2026-11-02T23:30:00Z"); // in Berlin schon der 3.11.
+describe("stats", () => {
+  it("builds day, week and month buckets in the time zone", () => {
+    const t = Date.parse("2026-11-02T23:30:00Z"); // already 3 Nov in Berlin
     expect(bucketKey(t, "day", "Europe/Berlin")).toBe("2026-11-03");
     expect(bucketKey(t, "week", "Europe/Berlin")).toBe("2026-11-02");
     expect(bucketKey(t, "month", "Europe/Berlin")).toBe("2026-11");
     expect(bucketKeys(t - 6 * DAY, t + 1, "day", "Europe/Berlin")).toHaveLength(7);
   });
 
-  it("zählt nach Status und erkennt Auswahlfelder", () => {
+  it("counts by status and detects choice fields", () => {
     const base = Date.parse("2026-11-01T10:00:00Z");
     const rows = ["Torte", "Torte", "Brot", "Torte"].map((topic, i) => ({
       createdAt: base + i * DAY,
@@ -33,7 +33,7 @@ describe("Auswertung", () => {
     expect(stats.fields.find((f) => f.name === "nachricht")?.values).toBeNull();
   });
 
-  it("filtert über Operator und MCP nach Feldwert und Status", async () => {
+  it("filters by field value and status through operator and MCP", async () => {
     const { operator, store, clock, app } = makeApp();
     const project = operator.createProject({ label: "A", origins: ["https://a.example"] });
     const form = operator.createForm(project.id, { name: "Kontakt", recipients: ["x@a.example"] });
@@ -66,14 +66,14 @@ describe("Auswertung", () => {
 });
 
 describe("Favicons", () => {
-  it("nimmt nur öffentliche Adressen", () => {
+  it("only accepts public addresses", () => {
     expect(publicHttpUrl("https://beispiel.de")).not.toBeNull();
     for (const bad of ["http://localhost", "http://127.0.0.1", "http://10.0.0.2", "http://192.168.1.1", "file:///etc/passwd", "http://[::1]"]) {
       expect(publicHttpUrl(bad)).toBeNull();
     }
   });
 
-  it("erkennt Bilder an den Bytes und ordnet Icon-Links", () => {
+  it("detects images by their bytes and ranks icon links", () => {
     expect(sniffImage(Buffer.from("<!doctype html>"))).toBeNull();
     expect(sniffImage(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]))).toBe("image/png");
     const urls = iconCandidates(
