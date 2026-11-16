@@ -97,6 +97,22 @@ function validateFieldLabels(input: unknown): Record<string, string> {
   return out;
 }
 
+/** Field names to leave out of the mail; trimmed, empty and repeated names dropped. */
+function validateHiddenFields(input: unknown): string[] {
+  if (input == null) return [];
+  if (!Array.isArray(input)) throw new AppError(400, "Hidden fields must be a list of field names.");
+  const out: string[] = [];
+  for (const raw of input) {
+    if (typeof raw !== "string") throw new AppError(400, "Hidden fields must be a list of field names.");
+    const name = raw.trim();
+    if (!name || out.includes(name)) continue;
+    if (name.length > MAX_LABEL_LENGTH) throw new AppError(400, `Field names may have at most ${MAX_LABEL_LENGTH} characters.`);
+    out.push(name);
+  }
+  if (out.length > MAX_LABELS) throw new AppError(400, `At most ${MAX_LABELS} hidden fields.`);
+  return out;
+}
+
 const MAX_TEMPLATES_PER_PROJECT = 50;
 const MAX_TEMPLATE_NAME = 100;
 const MAX_SUBJECT_SOURCE = 1000;
@@ -167,9 +183,11 @@ export function createOperator(opts: {
       turnstileSet: Boolean(form.turnstileSecretEnc),
       notifyPolicy: form.notifyPolicy,
       fieldLabels: form.fieldLabels,
+      hiddenFields: form.hiddenFields,
       templateId: form.templateId,
       seenFields: seen.names,
       sentLabels: seen.labels,
+      sentHidden: seen.hidden,
       snippet: formSnippet(`${base}/submit`, form.accessKey, locale),
       scriptSnippet: scriptSnippet({
         submitUrl: `${base}/submit`,
@@ -199,6 +217,7 @@ export function createOperator(opts: {
       projectLabel: project.label,
       fields: submission.fields,
       fieldLabels: submission.fieldLabels,
+      hiddenFields: submission.hiddenFields,
       replyTo: submission.replyTo,
       subject: submission.subject,
       createdAt: submission.createdAt,
@@ -255,6 +274,7 @@ export function createOperator(opts: {
         createdAt: submission.createdAt,
         fields: submission.fields,
         fieldLabels: { ...submission.fieldLabels, ...form?.fieldLabels },
+        hiddenFields: [...new Set([...submission.hiddenFields, ...(form?.hiddenFields ?? [])])],
         replyTo: submission.replyTo,
         subject: submission.subject,
         sample: "submission",
@@ -268,6 +288,7 @@ export function createOperator(opts: {
       createdAt: now(),
       fields,
       fieldLabels: {},
+      hiddenFields: [],
       replyTo: fields.email!,
       subject: null,
       sample: "example",
@@ -453,6 +474,7 @@ export function createOperator(opts: {
         turnstileSecret?: string | null;
         notifyPolicy?: NotifyPolicy | null;
         fieldLabels?: Record<string, string> | null;
+        hiddenFields?: string[] | null;
         templateId?: string | null;
       },
       requestUrl?: string,
@@ -474,6 +496,7 @@ export function createOperator(opts: {
           turnstileSecretEnc,
           notifyPolicy: asNotify(input.notifyPolicy),
           fieldLabels: validateFieldLabels(input.fieldLabels),
+          hiddenFields: validateHiddenFields(input.hiddenFields),
           templateId,
           now: now(),
         }),
@@ -491,6 +514,8 @@ export function createOperator(opts: {
         notifyPolicy?: NotifyPolicy | null;
         /** Replaces all field titles; null clears them. */
         fieldLabels?: Record<string, string> | null;
+        /** Replaces the list of fields left out of the mail; null clears it. */
+        hiddenFields?: string[] | null;
         /** Mail template of the same website; null uses the default. */
         templateId?: string | null;
       },
@@ -511,6 +536,7 @@ export function createOperator(opts: {
         turnstileSecretEnc,
         notifyPolicy: patch.notifyPolicy === undefined ? current.notifyPolicy : asNotify(patch.notifyPolicy),
         fieldLabels: patch.fieldLabels === undefined ? current.fieldLabels : validateFieldLabels(patch.fieldLabels),
+        hiddenFields: patch.hiddenFields === undefined ? current.hiddenFields : validateHiddenFields(patch.hiddenFields),
         templateId,
       });
       return formView(updated!, requestUrl);

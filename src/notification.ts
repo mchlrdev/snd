@@ -18,6 +18,8 @@ export type NotificationInput = {
   fields: Record<string, string>;
   /** Custom titles per field name from the form settings. */
   fieldLabels: Record<string, string>;
+  /** Fields left out of the {{#fields}} list (e.g. a privacy checkbox). */
+  hiddenFields?: string[];
   replyTo: string | null;
   subject: string | null;
 };
@@ -111,14 +113,19 @@ function preheader(values: string[]): string {
  *  field called "__proto__" or "constructor" is just a field. */
 export function templateData(input: NotificationInput, timeZone: string, locale: Locale): TemplateValue {
   const { date, time } = formatReceived(input.createdAt, timeZone, locale);
-  const entries = Object.entries(input.fields);
+  const hidden = new Set(input.hiddenFields ?? []);
   const field = Object.create(null) as Record<string, TemplateValue>;
   const title = Object.create(null) as Record<string, TemplateValue>;
-  const fields = entries.map(([name, raw], index) => {
-    const value = raw.replace(/\r\n?/g, "\n").trim();
-    const itemTitle = fieldTitle(name, input.fieldLabels, locale);
-    field[name] = value;
-    title[name] = itemTitle;
+  // field.<name> and title.<name> keep every field; only the list skips
+  // hidden ones, so a template can still use one on purpose.
+  for (const [name, raw] of Object.entries(input.fields)) {
+    field[name] = raw.replace(/\r\n?/g, "\n").trim();
+    title[name] = fieldTitle(name, input.fieldLabels, locale);
+  }
+  const entries = Object.keys(input.fields).filter((name) => !hidden.has(name));
+  const fields = entries.map((name, index) => {
+    const value = field[name] as string;
+    const itemTitle = title[name] as string;
     return {
       name,
       title: itemTitle,
@@ -357,9 +364,10 @@ Variables
   subject               the visitor's "subject" field, or empty
   replyTo               the visitor's reply address (email/replyto field), or empty
   preheader             first non-address values joined, max 140 characters, for the hidden inbox preview line
-  field.<name>          value of one field by its HTML name, e.g. {{field.email}}; empty if missing
+  field.<name>          value of one field by its HTML name, e.g. {{field.email}}; empty if missing (hidden fields too)
   title.<name>          display title of one field (own field title, otherwise a readable default)
-  fields                list of all submitted fields in order. Inside {{#fields}}…{{/fields}}:
+  fields                list of the submitted fields in order, without hidden ones (hide:<field> from the
+                        website, or "Hide in mail" in the form settings). Inside {{#fields}}…{{/fields}}:
     name, title, value  the field's HTML name, display title and value
     isEmail             true when the value is an email address
     isEmpty             true when the value is empty

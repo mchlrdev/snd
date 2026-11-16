@@ -35,7 +35,9 @@ const MCP_INSTRUCTIONS = `snd receives form submissions from static websites and
 
 Setup: create_project (with the website's origins), then create_form. Embed the form's scriptSnippet on the site: adapt the fields and markup to the site, but keep form[data-snd] with its action, the hidden access_key, the botcheck spam trap, the [data-snd-status] element and the script.
 
-Fields: any names work. Give every field a <label> (or data-label="…"); the script sends it as label:<field>, which becomes the field's title in the notification mail. For radio buttons and checkboxes the title comes from the fieldset's <legend>. A field named email sets the reply address; subject sets the mail subject. Without JavaScript, a form needs a hidden redirect field with a thank-you page on an allowed origin; snd shows no pages of its own.
+Fields: any names work. Give every field a <label> (or data-label="…"); the script sends it as label:<field>, which becomes the field's title in the notification mail. For radio buttons and checkbox groups the title comes from the fieldset's <legend>. A field named email sets the reply address; subject sets the mail subject. Without JavaScript, a form needs a hidden redirect field with a thank-you page on an allowed origin; snd shows no pages of its own.
+
+Hiding: mark fields the recipient doesn't need to read with data-hide, e.g. a required privacy/consent checkbox: <input type="checkbox" name="privacy" required data-hide>. The script sends hide:<field>; the value is still stored (as proof) but left out of the mail. In plain HTML use <input type="hidden" name="hide:privacy" value="1">. Hidden fields are also set per form with update_form { hiddenFields }.
 
 Mail: templates per website (get_default_template, create_template, preview_template), chosen per form with update_form { templateId }.`;
 
@@ -46,6 +48,13 @@ const fieldLabels = z
   .describe(
     'Custom titles per field name for the notification mail, e.g. { "message": "Your message" }. Replaces all existing titles; null clears them. ' +
       'Usually not needed: the website can send titles itself with hidden fields named "label:<field>" (e.g. name="label:message" value="Your message"). Titles set here win over sent ones.',
+  );
+
+const hiddenFields = z
+  .array(z.string())
+  .describe(
+    'Field names to leave out of the notification mail, e.g. ["privacy"] for a consent checkbox. They are still stored and exported. Replaces the whole list; null clears it. ' +
+      'Usually not needed: the website can mark fields itself with data-hide (scriptSnippet) or a hidden field hide:<field> (plain HTML). A field is hidden if either says so.',
   );
 
 const templateId = z
@@ -218,6 +227,7 @@ export function mountMcp(
           turnstileSecret: z.string().optional(),
           notifyPolicy: notifyPolicy.nullable().optional(),
           fieldLabels: fieldLabels.nullable().optional(),
+          hiddenFields: hiddenFields.nullable().optional(),
           templateId: templateId.optional(),
         }),
       },
@@ -235,6 +245,7 @@ export function mountMcp(
           turnstileSecret: z.string().nullable().optional(),
           notifyPolicy: notifyPolicy.nullable().optional(),
           fieldLabels: fieldLabels.nullable().optional(),
+          hiddenFields: hiddenFields.nullable().optional(),
           templateId: templateId.optional(),
         }),
       },

@@ -34,6 +34,7 @@ Rules for any form:
 - A field named `email` (or `replyto`) becomes the reply address, `subject` the mail subject.
 - Without `redirect`, the request must send `Accept: application/json` and gets `{ success, message }`.
 - Titles set in the console (Form → Settings → Field titles) win over sent ones.
+- Fields the recipient doesn't need to read — e.g. a required privacy checkbox — can be left out of the mail: `data-hide` on the field (JavaScript snippet) or `<input type="hidden" name="hide:privacy" value="1">` (plain HTML). They are still stored and exported. The console (Form → Settings → Show in mail) can hide fields too.
 - Any field names work (up to 50 fields plus their titles, 100 KB); file uploads are not supported.
 
 ## Language

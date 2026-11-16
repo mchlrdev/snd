@@ -16,8 +16,10 @@ import {
   TriangleAlert,
   Type,
   MailOpen,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Banner, BannerDescription, BannerTitle } from "@/components/ui/banner";
 import { InputField, InputGroup } from "@/components/ui/input-group";
 import { Tabs, TabsItem } from "@/components/ui/tabs";
@@ -432,6 +434,7 @@ function FormSettings({ form, project, onSaved }: { form: Form; project: Project
       </Section>
 
       <FieldTitles form={form} onSaved={onSaved} />
+      <MailFields form={form} onSaved={onSaved} />
 
       <TemplateChoice form={form} onSaved={onSaved} />
 
@@ -640,6 +643,64 @@ function TemplateChoice({ form, onSaved }: { form: Form; onSaved: (next: Form) =
           ))}
         </SelectContent>
       </Select>
+    </Section>
+  );
+}
+
+/** Which fields the notification mail shows. A hidden field is still stored
+ *  (a privacy checkbox stays as proof of consent), just not listed in the
+ *  mail. The website can hide fields itself (data-hide / hide:<field>);
+ *  those are shown as off and can't be switched on here. */
+function MailFields({ form, onSaved }: { form: Form; onSaved: (next: Form) => Promise<void> }) {
+  const [hidden, setHidden] = useState<string[]>(form.hiddenFields);
+  const save = useSave();
+
+  useEffect(() => setHidden(form.hiddenFields), [form.hiddenFields]);
+
+  const names = useMemo(
+    () => [...new Set([...form.seenFields, ...form.hiddenFields, ...form.sentHidden])],
+    [form.seenFields, form.hiddenFields, form.sentHidden],
+  );
+  const titles = useMemo(() => ({ ...form.sentLabels, ...form.fieldLabels }), [form.sentLabels, form.fieldLabels]);
+  const dirty = [...hidden].sort().join("\n") !== [...form.hiddenFields].sort().join("\n");
+
+  if (!names.length) return null;
+  return (
+    <Section
+      icon={<EyeOff />}
+      title={t("Show in mail")}
+      description={t("Hidden fields are still stored and exported, just not listed in the notification, e.g. a privacy checkbox.")}
+      footer={
+        <SaveFooter
+          state={save.state}
+          dirty={dirty}
+          onSave={() => void save.run(async () => onSaved(await api.updateForm(form.id, { hiddenFields: hidden })))}
+        />
+      }
+    >
+      <div className="flex flex-col gap-1">
+        {names.map((name) => {
+          const byForm = form.sentHidden.includes(name);
+          const label = fieldLabel(name, titles);
+          return (
+            <div key={name} className="flex flex-col">
+              <Switch
+                label={label === name ? name : `${label} (${name})`}
+                checked={!byForm && !hidden.includes(name)}
+                disabled={byForm}
+                onToggle={() =>
+                  setHidden((current) => (current.includes(name) ? current.filter((item) => item !== name) : [...current, name]))
+                }
+              />
+              {byForm ? (
+                <span className={cn(typeClass("caption", "compact"), "pb-1 pl-2.5 text-muted-foreground")}>
+                  {t("Hidden by your form (data-hide).")}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
     </Section>
   );
 }

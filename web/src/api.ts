@@ -67,9 +67,11 @@ export type Form = {
   notifyPolicy: NotifyPolicy | null;
   /** Custom titles per field name, e.g. { message: "Your message" }. */
   fieldLabels: Record<string, string>;
+  hiddenFields: string[];
   /** Field names that already appeared in submissions. */
   seenFields: string[];
   sentLabels: Record<string, string>;
+  sentHidden: string[];
   /** Mail template of the website; null uses the built-in default. */
   templateId: string | null;
   snippet: string;
@@ -193,6 +195,7 @@ export const api = {
       turnstileSecret?: string | null;
       notifyPolicy?: NotifyPolicy | null;
       fieldLabels?: Record<string, string> | null;
+      hiddenFields?: string[] | null;
       templateId?: string | null;
     },
   ) =>

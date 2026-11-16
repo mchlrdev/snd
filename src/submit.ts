@@ -13,6 +13,9 @@ const RESERVED = new Set(["access_key", "redirect", "botcheck", "cf-turnstile-re
 /** `label:<field>` carries the title of a field for the mail, e.g.
  *  <input type="hidden" name="label:message" value="Your request">. */
 export const LABEL_PREFIX = "label:";
+/** `hide:<field>` leaves a field out of the mail (it is still stored), e.g.
+ *  <input type="hidden" name="hide:privacy" value="1"> for a consent box. */
+export const HIDE_PREFIX = "hide:";
 const MAX_LABEL_LENGTH = 200;
 
 export type TurnstileResult = "ok" | "denied" | "unavailable";
@@ -73,7 +76,8 @@ export async function acceptSubmission(
   // Titles don't count as fields, so a form can label every one of them.
   const keys = Object.keys(input.fields);
   const labelKeys = keys.filter((key) => key.startsWith(LABEL_PREFIX));
-  if (keys.length - labelKeys.length > MAX_FIELDS || labelKeys.length > MAX_FIELDS) {
+  const hideKeys = keys.filter((key) => key.startsWith(HIDE_PREFIX));
+  if (keys.length - labelKeys.length - hideKeys.length > MAX_FIELDS || labelKeys.length > MAX_FIELDS || hideKeys.length > MAX_FIELDS) {
     throw fail(400, "Too many fields.");
   }
 
@@ -127,7 +131,7 @@ export async function acceptSubmission(
 
   const storedFields: Record<string, string> = {};
   for (const [key, value] of Object.entries(input.fields)) {
-    if (RESERVED.has(key) || key.startsWith(LABEL_PREFIX)) continue;
+    if (RESERVED.has(key) || key.startsWith(LABEL_PREFIX) || key.startsWith(HIDE_PREFIX)) continue;
     storedFields[key] = value;
   }
   const fieldLabels: Record<string, string> = {};
@@ -137,12 +141,18 @@ export async function acceptSubmission(
     const title = (input.fields[key] ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, MAX_LABEL_LENGTH);
     if (title && Object.hasOwn(storedFields, name)) fieldLabels[name] = title;
   }
+  // Any value except an explicit "0"/"false" hides, so value="1" or an empty value both work.
+  const hiddenFields = hideKeys
+    .filter((key) => !/^(0|false|no)$/i.test((input.fields[key] ?? "").trim()))
+    .map((key) => key.slice(HIDE_PREFIX.length))
+    .filter((name) => Object.hasOwn(storedFields, name));
   const replyTo = pickReplyTo(input.fields);
   const subject = input.fields.subject?.trim() || null;
   const submission = store.createSubmission({
     formId: form.id,
     fields: storedFields,
     fieldLabels,
+    hiddenFields,
     replyTo,
     subject,
     now: input.now,

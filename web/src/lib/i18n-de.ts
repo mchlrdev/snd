@@ -183,6 +183,12 @@ export const DE: Record<string, string> = {
     "Empfohlen. Sendet ohne Seitenwechsel, zeigt das Ergebnis im Formular und schickt die Feldtitel für die Mail mit. Felder frei anpassen, jedes mit einem <label>.",
   "Works without JavaScript. After sending, visitors go to your thank-you page.":
     "Funktioniert ohne JavaScript. Nach dem Senden landen Besucher auf deiner Danke-Seite.",
+  "Show in mail": "In der Mail anzeigen",
+  "Hidden fields are still stored and exported, just not listed in the notification, e.g. a privacy checkbox.":
+    "Ausgeblendete Felder werden weiter gespeichert und exportiert, nur nicht in der Benachrichtigung aufgeführt, z. B. eine Datenschutz-Checkbox.",
+  "Hidden by your form (data-hide).": "Von deinem Formular ausgeblendet (data-hide).",
+  "I agree to the privacy policy.": "Ich stimme der Datenschutzerklärung zu.",
+  "Stored, but left out of the notification mail": "Wird gespeichert, aber nicht in der Benachrichtigung angezeigt",
   "2 · Try it": "2 · Ausprobieren",
   "Submit the form on your website once.": "Schick das Formular auf deiner Website einmal ab.",
   "It works – 1 message received": "Es funktioniert – 1 Nachricht angekommen",

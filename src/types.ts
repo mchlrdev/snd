@@ -85,6 +85,8 @@ export type FormRecord = {
   notifyPolicy: NotifyPolicy | null;
   /** Custom titles per field name for mail and console, e.g. { message: "Your message" }. */
   fieldLabels: Record<string, string>;
+  /** Fields left out of the notification mail; they are still stored. */
+  hiddenFields: string[];
   /** Mail template of the form's project; null uses the built-in default. */
   templateId: string | null;
   createdAt: number;
@@ -100,11 +102,15 @@ export type FormView = {
   turnstileSet: boolean;
   notifyPolicy: NotifyPolicy | null;
   fieldLabels: Record<string, string>;
+  /** Fields left out of the notification mail (still stored). */
+  hiddenFields: string[];
   templateId: string | null;
   /** Field names that already appeared in this form's submissions. */
   seenFields: string[];
   /** Titles the website sent with its latest submissions (`label:<field>`). */
   sentLabels: Record<string, string>;
+  /** Fields the website's latest submissions asked to hide (`hide:<field>`). */
+  sentHidden: string[];
   /** Plain HTML form; needs a thank-you page in `redirect`. */
   snippet: string;
   /** Recommended: form plus script that sends with fetch and field titles. */
@@ -122,6 +128,8 @@ export type SubmissionRecord = {
   fields: Record<string, string>;
   /** Field titles the website sent along (`label:<field>`). */
   fieldLabels: Record<string, string>;
+  /** Fields the website asked to leave out of the mail (`hide:<field>`). */
+  hiddenFields: string[];
   replyTo: string | null;
   subject: string | null;
   createdAt: number;
@@ -139,6 +147,7 @@ export type SubmissionView = {
   projectLabel: string;
   fields: Record<string, string>;
   fieldLabels: Record<string, string>;
+  hiddenFields: string[];
   replyTo: string | null;
   subject: string | null;
   createdAt: number;

@@ -92,6 +92,35 @@ describe("POST /submit", () => {
     expect(await res.text()).toContain("No redirect");
   });
 
+  it("keeps fields hidden with hide:<field> out of the mail but stores them", async () => {
+    const { app, operator, mail, queue } = makeApp();
+    const { form } = await seedForm(operator);
+    await post(app, {
+      access_key: form.accessKey,
+      message: "Hi",
+      privacy: "yes",
+      "hide:privacy": "1",
+      "hide:message": "0",
+      "hide:ghost": "1",
+    });
+    const listed = operator.listSubmissions({ formId: form.id, limit: 10, offset: 0 });
+    expect(listed.items[0]?.fields).toEqual({ message: "Hi", privacy: "yes" });
+    expect(listed.items[0]?.hiddenFields).toEqual(["privacy"]);
+    expect(operator.getForm(form.id).sentHidden).toEqual(["privacy"]);
+    await queue.tick();
+    expect(mail.sent[0]?.mail.text).toContain("Hi");
+    expect(mail.sent[0]?.mail.text).not.toContain("yes");
+    expect(mail.sent[0]?.mail.html).not.toContain("Privacy");
+
+    // The console can hide fields too.
+    await operator.updateForm(form.id, { hiddenFields: [" message ", "message"] });
+    expect(operator.getForm(form.id).hiddenFields).toEqual(["message"]);
+    await post(app, { access_key: form.accessKey, message: "Secret", name: "Ada" });
+    await queue.tick();
+    expect(mail.sent[1]?.mail.text).toContain("Ada");
+    expect(mail.sent[1]?.mail.text).not.toContain("Secret");
+  });
+
   it("stores field titles sent as label:<field> and uses them in the mail", async () => {
     const { app, operator, mail, queue } = makeApp();
     const { form } = await seedForm(operator);

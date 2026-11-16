@@ -162,6 +162,7 @@ function formFrom(row: Row): FormRecord {
     turnstileSecretEnc: row.turnstile_secret_enc ? String(row.turnstile_secret_enc) : null,
     notifyPolicy: row.notify_policy ? asNotify(row.notify_policy) : null,
     fieldLabels: parseLabels(row.field_labels),
+    hiddenFields: parseNames(row.hidden_fields),
     templateId: row.template_id ? String(row.template_id) : null,
     createdAt: Number(row.created_at),
   };
@@ -178,6 +179,16 @@ function templateFrom(row: Row): TemplateRecord {
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   };
+}
+
+function parseNames(raw: unknown): string[] {
+  if (typeof raw !== "string" || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function parseLabels(raw: unknown): Record<string, string> {
@@ -202,6 +213,7 @@ function submissionFrom(row: Row): SubmissionRecord {
     projectId: String(row.project_id ?? ""),
     fields: JSON.parse(String(row.fields_json)) as Record<string, string>,
     fieldLabels: parseLabels(row.field_labels),
+    hiddenFields: parseNames(row.hidden_fields),
     replyTo: row.reply_to ? String(row.reply_to) : null,
     subject: row.subject ? String(row.subject) : null,
     createdAt: Number(row.created_at),
@@ -289,6 +301,12 @@ export class Store {
     }
     if (!submissionCols.some((col) => col.name === "field_labels")) {
       this.db.exec("ALTER TABLE submissions ADD COLUMN field_labels TEXT");
+    }
+    if (!submissionCols.some((col) => col.name === "hidden_fields")) {
+      this.db.exec("ALTER TABLE submissions ADD COLUMN hidden_fields TEXT");
+    }
+    if (!formCols.some((col) => col.name === "hidden_fields")) {
+      this.db.exec("ALTER TABLE forms ADD COLUMN hidden_fields TEXT");
     }
     this.db.exec(`CREATE TABLE IF NOT EXISTS mail_templates (
       id TEXT PRIMARY KEY,
@@ -524,6 +542,7 @@ export class Store {
     turnstileSecretEnc: string | null;
     notifyPolicy: NotifyPolicy | null;
     fieldLabels: Record<string, string>;
+    hiddenFields?: string[];
     templateId?: string | null;
     now: number;
   }): FormRecord {
@@ -534,11 +553,11 @@ export class Store {
         `INSERT INTO forms (
           id, project_id, name, access_key, recipients,
           smtp_host, smtp_port, smtp_user, smtp_pass_enc, smtp_from,
-          turnstile_secret_enc, notify_policy, field_labels, template_id, created_at
+          turnstile_secret_enc, notify_policy, field_labels, hidden_fields, template_id, created_at
         ) VALUES (
           @id, @project_id, @name, @access_key, @recipients,
           @smtp_host, @smtp_port, @smtp_user, @smtp_pass_enc, @smtp_from,
-          @turnstile_secret_enc, @notify_policy, @field_labels, @template_id, @created_at
+          @turnstile_secret_enc, @notify_policy, @field_labels, @hidden_fields, @template_id, @created_at
         )`,
       )
       .run({
@@ -551,6 +570,7 @@ export class Store {
         turnstile_secret_enc: input.turnstileSecretEnc,
         notify_policy: input.notifyPolicy,
         field_labels: JSON.stringify(input.fieldLabels),
+        hidden_fields: JSON.stringify(input.hiddenFields ?? []),
         template_id: input.templateId ?? null,
         created_at: input.now,
       });
@@ -567,6 +587,7 @@ export class Store {
       turnstileSecretEnc?: string | null;
       notifyPolicy?: NotifyPolicy | null;
       fieldLabels?: Record<string, string>;
+      hiddenFields?: string[];
       templateId?: string | null;
     },
   ): FormRecord | null {
@@ -590,6 +611,7 @@ export class Store {
           turnstile_secret_enc = @turnstile_secret_enc,
           notify_policy = @notify_policy,
           field_labels = @field_labels,
+          hidden_fields = @hidden_fields,
           template_id = @template_id
         WHERE id = @id`,
       )
@@ -602,6 +624,7 @@ export class Store {
         turnstile_secret_enc: turnstile,
         notify_policy: notifyPolicy,
         field_labels: JSON.stringify(patch.fieldLabels ?? current.fieldLabels),
+        hidden_fields: JSON.stringify(patch.hiddenFields ?? current.hiddenFields),
         template_id: patch.templateId === undefined ? current.templateId : patch.templateId,
       });
     return this.getForm(id);
@@ -616,6 +639,7 @@ export class Store {
     formId: string;
     fields: Record<string, string>;
     fieldLabels?: Record<string, string>;
+    hiddenFields?: string[];
     replyTo: string | null;
     subject: string | null;
     now: number;
@@ -624,10 +648,10 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO submissions (
-          id, form_id, fields_json, field_labels, reply_to, subject, created_at,
+          id, form_id, fields_json, field_labels, hidden_fields, reply_to, subject, created_at,
           mail_status, mail_attempts, last_error, next_attempt_at
         ) VALUES (
-          @id, @form_id, @fields_json, @field_labels, @reply_to, @subject, @created_at,
+          @id, @form_id, @fields_json, @field_labels, @hidden_fields, @reply_to, @subject, @created_at,
           'queued', 0, NULL, @created_at
         )`,
       )
@@ -636,6 +660,7 @@ export class Store {
         form_id: input.formId,
         fields_json: JSON.stringify(input.fields),
         field_labels: input.fieldLabels && Object.keys(input.fieldLabels).length ? JSON.stringify(input.fieldLabels) : null,
+        hidden_fields: input.hiddenFields?.length ? JSON.stringify(input.hiddenFields) : null,
         reply_to: input.replyTo,
         subject: input.subject,
         created_at: input.now,
@@ -744,12 +769,16 @@ export class Store {
 
   /** Field names of a form's latest submissions, newest first, and the
    *  titles the website sent for them (the newest title wins). */
-  seenFields(formId: string, limit = 200): { names: string[]; labels: Record<string, string> } {
+  seenFields(formId: string, limit = 200): { names: string[]; labels: Record<string, string>; hidden: string[] } {
     const rows = this.db
-      .prepare("SELECT fields_json, field_labels FROM submissions WHERE form_id = ? ORDER BY created_at DESC LIMIT ?")
-      .all(formId, limit) as { fields_json: string; field_labels: string | null }[];
+      .prepare(
+        "SELECT fields_json, field_labels, hidden_fields FROM submissions WHERE form_id = ? ORDER BY created_at DESC LIMIT ?",
+      )
+      .all(formId, limit) as { fields_json: string; field_labels: string | null; hidden_fields: string | null }[];
     const names = new Set<string>();
     const labels: Record<string, string> = {};
+    // Hidden per the newest submission that mentions hiding at all.
+    let hidden: string[] | null = null;
     for (const row of rows) {
       try {
         for (const key of Object.keys(JSON.parse(row.fields_json) as Record<string, unknown>)) names.add(key);
@@ -759,8 +788,9 @@ export class Store {
       for (const [key, title] of Object.entries(parseLabels(row.field_labels))) {
         if (!Object.hasOwn(labels, key)) labels[key] = title;
       }
+      if (!hidden && row.hidden_fields) hidden = parseNames(row.hidden_fields);
     }
-    return { names: [...names], labels };
+    return { names: [...names], labels, hidden: hidden ?? [] };
   }
 
   countSubmissions(filter: { formId?: string; projectId?: string }): number {
@@ -811,6 +841,7 @@ export class Store {
             f.recipients AS form_recipients,
             f.notify_policy AS form_notify_policy,
             f.field_labels AS form_field_labels,
+            f.hidden_fields AS form_hidden_fields,
             t.id AS template_id,
             t.subject AS template_subject,
             t.html AS template_html,
@@ -851,6 +882,8 @@ export class Store {
         formName: String(row.form_name),
         // Titles set in the console win over the ones the website sent.
         fieldLabels: { ...submission.fieldLabels, ...parseLabels(row.form_field_labels) },
+        // Hidden if either the website or the console says so.
+        hiddenFields: [...new Set([...submission.hiddenFields, ...parseNames(row.form_hidden_fields)])],
         template: row.template_id
           ? { subject: String(row.template_subject ?? ""), html: String(row.template_html ?? ""), text: String(row.template_text ?? "") }
           : null,
