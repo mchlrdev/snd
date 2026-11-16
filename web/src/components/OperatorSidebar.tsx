@@ -110,27 +110,30 @@ export function OperatorSidebar(props: Omit<SidebarProps, "children">) {
           ) : null}
 
           <SidebarMenu>
-            {projects.map((project) => {
+            {projects.map((project, index) => {
               const forms = formsFor(project.id);
               const warning = websiteWarning(project, forms);
               return (
-                <SidebarMenuItem key={project.id}>
+                // Each website is its own block: air above it, its forms in a
+                // smaller, quieter type underneath.
+                <SidebarMenuItem key={project.id} className={cn(index > 0 && "mt-4")}>
                   <SidebarMenuButton
                     icon={websiteIcon(project)}
                     isActive={activeProjectId === project.id}
                     onClick={() => navigate(`/projects/${project.id}`)}
                   >
-                    <span className="truncate">{project.label}</span>
+                    <span className="truncate font-medium text-foreground">{project.label}</span>
                     {warning ? <Warning reason={warning} /> : null}
                   </SidebarMenuButton>
                   {forms.length > 0 ? (
-                    <SidebarMenuSub>
+                    <SidebarMenuSub className="mt-1 border-border/60">
                       {forms.map((form) => {
                         // A website-level problem already marks the parent row.
                         const formWarn = warning ? null : formWarning(form, project);
                         return (
                           <SidebarMenuSubItem key={form.id}>
                             <SidebarMenuSubButton
+                              size="sm"
                               isActive={activeFormId === form.id}
                               render={<button type="button" onClick={() => navigate(`/forms/${form.id}`)} />}
                             >

@@ -64,11 +64,11 @@ function mergeSmtp(current: SmtpRecord | null, patch: SmtpPatch | SmtpInput | nu
   };
 }
 
-function validateRecipients(recipients: string[]): string[] {
-  if (recipients.length === 0) throw new AppError(400, "At least one recipient is required.");
+function validateRecipients(recipients: unknown): string[] {
+  if (!Array.isArray(recipients) || recipients.length === 0) throw new AppError(400, "At least one recipient is required.");
   const out: string[] = [];
   for (const raw of recipients) {
-    const email = raw.trim();
+    const email = typeof raw === "string" ? raw.trim() : "";
     if (!isEmail(email)) throw new AppError(400, `Invalid recipient address: ${raw}`);
     if (!out.includes(email)) out.push(email);
   }
